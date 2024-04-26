@@ -3,65 +3,92 @@ package streamsv2
 import (
 	"fmt"
 	"testing"
+	"time"
 )
 
 func TestObservable(t *testing.T) {
+	//t.Run("Observe producer test", func(t *testing.T) {
+	//	ob := ObserveProducer[int](func(subscriber StreamWriter[int]) {
+	//		for i := 0; i < 10; i++ {
+	//			subscriber.Write(i)
+	//		}
+	//		subscriber.Complete()
+	//	}, WithActivityName("producer observable"))
+	//
+	//	ob.Subscribe(
+	//		func(v int) {
+	//			fmt.Println(v)
+	//		},
+	//		WithOnError(func(err error) {
+	//			fmt.Println(err)
+	//		}),
+	//		WithOnComplete(func() {
+	//			fmt.Println("complete")
+	//		}))
+	//})
+	//
+	//t.Run("Observe operation test", func(t *testing.T) {
+	//	ob := ObserveProducer[int](func(subscriber StreamWriter[int]) {
+	//		for i := 0; i < 10; i++ {
+	//			subscriber.Write(i)
+	//		}
+	//		subscriber.Complete()
+	//	}, WithActivityName("producer observable"))
+	//
+	//	op := ObserveOperation[int, int](
+	//		ob,
+	//		func(upstream StreamReader[int], downstream StreamWriter[int]) {
+	//			for item := range upstream.Read() {
+	//				downstream.Send(item)
+	//			}
+	//		},
+	//		WithActivityName("operation observable"))
+	//
+	//	op.Subscribe(
+	//		func(v int) {
+	//			fmt.Println(v)
+	//		})
+	//})
+
 	t.Run("All test", func(t *testing.T) {
 		ob := ObserveProducer[int](func(subscriber StreamWriter[int]) {
 			for i := 0; i < 10; i++ {
 				subscriber.Write(i)
+				time.Sleep(100 * time.Millisecond)
 			}
 			subscriber.Complete()
-		})
+		},
+			WithActivityName("producer observable"),
+			WithErrorStrategy(StopOnErrorStrategy),
+			WithBackpressureStrategy(BlockBackpressureStrategy),
+		)
 
-		obStr := Map[int, string](
+		obStr1 := Map[int, string](
 			func(v int, index uint) (string, error) {
+				//if index == 2 {
+				//	return "", fmt.Errorf("error")
+				//}
 				return fmt.Sprintf("Digit: %d", v), nil
 			},
 		)(ob)
+
+		obStr := Map[string, string](
+			func(v string, index uint) (string, error) {
+				time.Sleep(200 * time.Millisecond)
+				return fmt.Sprintf("String: %v", v), nil
+			},
+		)(obStr1)
 
 		obStr.Subscribe(
 			func(v string) {
 				fmt.Println(v)
 			},
-			func(err error) {
-
-			},
-			func() {
-
-			})
-	})
-}
-
-// Map transforms the items emitted by an Observable by applying a function to each item.
-func Map[TIn any, TOut any](mapper func(TIn, uint) (TOut, error)) OperatorFunc[TIn, TOut] {
-	if mapper == nil {
-		panic(`rxgo: "Map" expected mapper func`)
-	}
-	return func(source *Observable[TIn]) *Observable[TOut] {
-		var (
-			index uint
+			WithOnError(func(err error) {
+				fmt.Println(err)
+			}),
+			WithOnComplete(func() {
+				fmt.Println("complete")
+			}),
 		)
-
-		// TODO: So I like this ObserveOperation function here, as it'll be use to link the observables together
-		// including the connect of each observable. What you need to figure out is how youire' going to handle
-		// errors in a chain of observers.. Have a look at RX go for inspiration..
-		return ObserveOperation[TIn, TOut](
-			source,
-			func(streamReader StreamReader[TIn], streamWriter StreamWriter[TOut]) {
-				for item := range streamReader.Read() {
-					output, err := mapper(item.Value(), index)
-					index++
-
-					if err != nil {
-						streamWriter.Error(err)
-						return
-					}
-
-					streamWriter.Write(output)
-				}
-
-				streamWriter.Complete()
-			})
-	}
+	})
 }

@@ -20,12 +20,10 @@ import (
 )
 
 type (
-	OnNextFunc[T any] func(T)
-
 	// OnErrorFunc defines a function that computes a value from an error.
 	OnErrorFunc                   func(error)
 	OnCompleteFunc                func()
-	FinalizerFunc                 func()
+	OnNextFunc[T any]             func(v T)
 	ErrorFunc                     func() error
 	OperatorFunc[I any, O any]    func(source *Observable[I]) *Observable[O]
 	DurationFunc[T any, R any]    func(value T) Observable[R]
@@ -35,55 +33,94 @@ type (
 	ComparatorFunc[A any, B any]  func(prev A, curr B) bool
 	AccumulatorFunc[A any, V any] func(acc A, value V, index uint) (A, error)
 	// ProducerFunc is a function that produces elements for an observable
-	ProducerFunc[T any] func(streamWriter StreamWriter[T])
+	ProducerFunc[T any]              func(streamWriter StreamWriter[T])
+	OperationFunc[TIn any, TOut any] func(StreamReader[TIn], StreamWriter[TOut])
+
+	ErrorStrategy        string
+	BackpressureStrategy string
 )
 
-//type Subscription interface {
-//	// allow user to unsubscribe the downstream manually
-//	Unsubscribe()
-//}
+const (
+	ContinueOnErrorStrategy ErrorStrategy = "continue"
+	StopOnErrorStrategy     ErrorStrategy = "stop"
 
-//type Observer[T any] interface {
-//	Next(T)
-//	Error(error)
-//	Complete()
-//}
+	DropBackpressureStrategy  BackpressureStrategy = "drop"
+	BlockBackpressureStrategy BackpressureStrategy = "block"
+)
 
 type Subscriber[T any] interface {
 	Stop()
 	Send() chan<- Notification[T]
 	ForEach() <-chan Notification[T]
 	Closed() <-chan struct{}
-	// Unsubscribe()
-	// Observer[T]
 }
 
-type ObservableConnector interface {
+type parentObservable interface {
 	Connect()
+	cloneOptions() observableOptions
 }
-
-//type Subject[T any] interface {
-//	Subscriber[T]
-//	Subscription
-//}
-
 type observableOptions struct {
-	ctx context.Context
+	ctx                  context.Context
+	activity             string
+	backpressureStrategy BackpressureStrategy
+	errorStrategy        ErrorStrategy
 }
 
-type ObservableOption func(options observableOptions)
+func newObservableOptions() observableOptions {
+	return observableOptions{
+		ctx:                  context.Background(),
+		backpressureStrategy: BlockBackpressureStrategy,
+		errorStrategy:        StopOnErrorStrategy,
+	}
+}
 
-func newObservable[T any](upstreamCallback func() StreamReader[T], options ...ObservableOption) *Observable[T] {
+func (o observableOptions) Clone() observableOptions {
+	return observableOptions{
+		ctx:                  o.ctx,
+		backpressureStrategy: o.backpressureStrategy,
+		errorStrategy:        o.errorStrategy,
+	}
+}
+
+type ObservableOption func(options *observableOptions)
+
+func WithContext(ctx context.Context) ObservableOption {
+	return func(options *observableOptions) {
+		options.ctx = ctx
+	}
+}
+
+func WithErrorStrategy(strategy ErrorStrategy) ObservableOption {
+	return func(options *observableOptions) {
+		options.errorStrategy = strategy
+	}
+}
+
+func WithBackpressureStrategy(strategy BackpressureStrategy) ObservableOption {
+	return func(options *observableOptions) {
+		options.backpressureStrategy = strategy
+	}
+}
+
+func WithActivityName(activityName string) ObservableOption {
+	return func(options *observableOptions) {
+		options.activity = activityName
+	}
+}
+
+func newObservable[T any](upstreamCallback func(streamWriter StreamWriter[T], options observableOptions), options ...ObservableOption) *Observable[T] {
 	return newObservableWithParent[T](upstreamCallback, nil, options...)
 }
 
-func newObservableWithParent[T any](upstreamCallback func() StreamReader[T], parentObservable ObservableConnector, options ...ObservableOption) *Observable[T] {
-	opts := observableOptions{
-		ctx: context.Background(),
+func newObservableWithParent[T any](upstreamCallback func(streamWriter StreamWriter[T], options observableOptions), parent parentObservable, options ...ObservableOption) *Observable[T] {
+	opts := newObservableOptions()
+
+	if parent != nil {
+		opts = parent.cloneOptions()
 	}
 
 	for _, opt := range options {
-		opt(opts)
+		opt(&opts)
 	}
 
 	return &Observable[T]{
@@ -91,11 +128,11 @@ func newObservableWithParent[T any](upstreamCallback func() StreamReader[T], par
 		opts:             opts,
 		upstreamCallback: upstreamCallback,
 		downstream:       newStream[T](),
-		parent:           parentObservable,
+		parent:           parent,
 	}
 }
 
-// connect starts the observation of the upstream stream
+// Connect starts the observation of the upstream stream
 func (o *Observable[T]) Connect() {
 	o.mu.Lock()
 	defer o.mu.Unlock()
@@ -109,10 +146,11 @@ func (o *Observable[T]) Connect() {
 		o.parent.Connect()
 	}
 
-	go func() {
-		defer o.downstream.close()
+	upstream := newStream[T]()
 
-		upstream := o.upstreamCallback()
+	go func() {
+		defer upstream.Close()
+		defer o.downstream.Close()
 
 		for {
 			select {
@@ -123,42 +161,48 @@ func (o *Observable[T]) Connect() {
 					return
 				}
 
-				//if item.Kind() == CompleteKind {
-				//	upstream.close()
-				//}
+				if o.opts.backpressureStrategy == DropBackpressureStrategy {
+					select {
+					case o.downstream.Send() <- item:
+					default:
+						continue
+					}
+				} else {
+					o.downstream.Send() <- item
+				}
 
-				closed, _ := o.downstream.send(item)
+				if item.Err() != nil && o.opts.errorStrategy == StopOnErrorStrategy {
+					return
+				}
 
-				if closed {
-
-					// TODO: What do you do here when the downstream downstream is closed? Propagate it back up?
+				if item.Kind() == CompleteKind {
+					return
 				}
 			}
 		}
 	}()
 
+	go o.upstreamCallback(upstream, o.opts)
+
 	o.connected = true
+
 }
 
 // ObserveStream observes items from a downstream
-func ObserveStream[T any](source StreamReader[T], options ...ObservableOption) *Observable[T] {
-	return newObservable(
-		func() StreamReader[T] {
-			return source
-		},
-		options...,
-	)
-}
+//func ObserveStream[T any](source StreamReader[T], cloneOptions ...ObservableOption) *Observable[T] {
+//	return newObservable(
+//		func(streamWriter StreamWriter[T], opts observableOptions) {
+//			producer(streamWriter)
+//		},
+//		cloneOptions...,
+//	)
+//}
 
 // ObserveProducer observes items produced by a callback function
 func ObserveProducer[T any](producer ProducerFunc[T], options ...ObservableOption) *Observable[T] {
 	return newObservable[T](
-		func() StreamReader[T] {
-			stream := newStream[T]()
-
-			go producer(stream)
-
-			return stream
+		func(streamWriter StreamWriter[T], opts observableOptions) {
+			producer(streamWriter)
 		},
 		options...,
 	)
@@ -166,16 +210,12 @@ func ObserveProducer[T any](producer ProducerFunc[T], options ...ObservableOptio
 
 func ObserveOperation[TIn any, TOut any](
 	source *Observable[TIn],
-	producer func(StreamReader[TIn], StreamWriter[TOut]),
+	operation OperationFunc[TIn, TOut],
 	options ...ObservableOption,
 ) *Observable[TOut] {
 	observable := newObservableWithParent[TOut](
-		func() StreamReader[TOut] {
-			downstream := newStream[TOut]()
-
-			producer(source.Observe(), downstream)
-
-			return downstream
+		func(streamWriter StreamWriter[TOut], opts observableOptions) {
+			operation(source.Observe(), streamWriter)
 		},
 		source,
 		options...,
@@ -188,10 +228,10 @@ type Observable[T any] struct {
 	mu   *sync.Mutex
 	opts observableOptions
 	// upstreamCallback is a function that produces the upstream downstream of items
-	upstreamCallback func() StreamReader[T]
+	upstreamCallback func(StreamWriter[T], observableOptions)
 	// parent is the observable that has produced the upstream downstream of items
-	parent ObservableConnector
-	// downstream is the stream that will send items to the observer
+	parent parentObservable
+	// downstream is the stream that will Send items to the observer
 	downstream *stream[T]
 	// connected is a flag that indicates whether the observable has begun observing items from the upstream
 	connected bool
@@ -203,102 +243,62 @@ func (o *Observable[T]) Observe() StreamReader[T] {
 }
 
 // Subscribe starts the synchronous observation of the observable
-func (o *Observable[T]) Subscribe(onNext func(v T), onError func(err error), onComplete func()) {
-	defer onComplete()
+func (o *Observable[T]) Subscribe(onNext OnNextFunc[T], options ...SubscribeOption) {
+	subscribeOptions := &subscribeOptions{
+		onError:    func(err error) {},
+		onComplete: func() {},
+	}
+
+	for _, opt := range options {
+		opt(subscribeOptions)
+	}
+
+	wg := &sync.WaitGroup{}
+	wg.Add(1)
+
+	go func() {
+		defer subscribeOptions.onComplete()
+		defer wg.Done()
+
+		for item := range o.downstream.Read() {
+			if item.Err() != nil {
+				subscribeOptions.onError(item.Err())
+				continue
+			}
+
+			if item.Done() {
+				return
+			}
+
+			onNext(item.Value())
+		}
+	}()
+
+	// Send a connect signal up the observable chain to start observing
 	o.Connect()
 
-	for item := range o.downstream.Read() {
-		if item.Err() != nil {
-			onError(item.Err())
-			return
-		}
-
-		if item.Done() {
-			return
-		}
-
-		onNext(item.Value())
-	}
-}
-
-/*
-
-
-// NB: Passes a subscriber (essentially a channel) to the source (the upstreamCallback of elements) to start producing.
-func (o *Observable[T]) SubscribeWith(subscriber Subscriber[T]) {
-	o.source(subscriber)
-}
-
-// NB: The cb is a callback that lets the caller know when the subscription to the source has been completed.
-//
-//	SubscribeOn essentially creates a channel (subscriber) and passes it to the source (upstreamCallback of elements) to start producing. The channel / subscriber is returned.
-func (o *Observable[T]) SubscribeOn(cb ...func()) Subscriber[T] {
-	var subscriber Subject[T]
-	if o.connect != nil {
-		subscriber = o.connect()
-	} else {
-		subscriber = NewSubscriber[T]()
-	}
-	finalizer := func() {}
-	if len(cb) > 0 {
-		finalizer = cb[0]
-	}
-	go func() {
-		defer subscriber.Unsubscribe()
-		defer finalizer()
-		o.source(subscriber)
-	}()
-	return subscriber
-}
-
-func (o *Observable[T]) Subscribe(onNext func(T), onError func(error), onComplete func()) {
-	subscriber := NewSafeSubscriber(onNext, onError, onComplete)
-	wg := new(sync.WaitGroup)
-	wg.Add(2)
-	go func() {
-		defer wg.Done()
-		o.source(subscriber)
-	}()
-	go func() {
-		defer wg.Done()
-		consumeStreamUntil(o.ctx, subscriber, func() {})
-	}()
 	wg.Wait()
 }
 
-func consumeStreamUntil[T any](ctx context.Context, sub *safeSubscriber[T], finalizer FinalizerFunc) {
-	defer sub.Unsubscribe()
-	defer finalizer()
+func (o *Observable[T]) cloneOptions() observableOptions {
+	return o.opts.Clone()
+}
 
-observe:
-	for {
-		select {
-		// If context cancelled, shut down everything
-		case <-ctx.Done():
-			sub.dst.Error(ctx.Err())
+type subscribeOptions struct {
+	onError    OnErrorFunc
+	onComplete OnCompleteFunc
+}
 
-		case <-sub.Closed():
-			break observe
+type SubscribeOption func(options *subscribeOptions)
 
-		case item, ok := <-sub.ForEach():
-			if !ok {
-				break observe
-			}
-
-			// handle `Error` notification
-			if err := item.Err(); err != nil {
-				sub.dst.Error(err)
-				break observe
-			}
-
-			// handle `Complete` notification
-			if item.Done() {
-				sub.dst.Complete()
-				break observe
-			}
-
-			sub.dst.Next(item.Value())
-		}
+func WithOnError(onError OnErrorFunc) SubscribeOption {
+	return func(options *subscribeOptions) {
+		options.onError = onError
 	}
 }
-*/
+
+func WithOnComplete(onComplete OnCompleteFunc) SubscribeOption {
+	return func(options *subscribeOptions) {
+		options.onComplete = onComplete
+	}
+}

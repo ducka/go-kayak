@@ -1,27 +1,21 @@
 package streamsv2
 
 // NotificationKind
-type NotificationKind int
+type NotificationKind string
 
 const (
 	// NextKind indicates the next value in the downstream
-	NextKind NotificationKind = iota
+	NextKind NotificationKind = "NextKind"
 	// ErrorKind indicates an error occurred
-	ErrorKind
+	ErrorKind NotificationKind = "ErrorKind"
 	// CompleteKind indicates the downstream is complete
-	CompleteKind
+	CompleteKind NotificationKind = "CompleteKind"
 )
 
-type ObservableNotification[T any] interface {
+type Notification[T any] interface {
 	Kind() NotificationKind
 	Value() T // returns the underlying value if it's a "Next" notification
 	Err() error
-	IsEnd() bool
-}
-
-type Notification[T any] interface {
-	ObservableNotification[T]
-	Send(Subscriber[T]) bool
 	Done() bool
 }
 
@@ -48,19 +42,6 @@ func (d notification[T]) Err() error {
 
 func (d notification[T]) Done() bool {
 	return d.done
-}
-
-func (d notification[T]) IsEnd() bool {
-	return d.err != nil || d.done
-}
-
-func (d *notification[T]) Send(sub Subscriber[T]) bool {
-	select {
-	case <-sub.Closed():
-		return false
-	case sub.Send() <- d:
-		return true
-	}
 }
 
 func Next[T any](v T) Notification[T] {

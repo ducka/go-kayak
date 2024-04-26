@@ -18,7 +18,7 @@ package rxgo
 //	getPool() (bool, int)
 //	buildChannel() chan Item
 //	buildContext(parent context.Context) context.Context
-//	getBackPressureStrategy() BackpressureStrategy
+//	getBackPressureStrategy() backpressureStrategy
 //	getErrorStrategy() OnErrorStrategy
 //	isConnectable() bool
 //	isConnectOperation() bool
@@ -32,7 +32,7 @@ package rxgo
 //	ctx                  context.Context
 //	observation          ObservationStrategy
 //	pool                 int
-//	backPressureStrategy BackpressureStrategy
+//	backPressureStrategy backpressureStrategy
 //	onErrorStrategy      OnErrorStrategy
 //	propagate            bool
 //	connectable          bool
@@ -74,7 +74,7 @@ package rxgo
 //	return context.Background()
 //}
 //
-//func (fdo *funcOption) getBackPressureStrategy() BackpressureStrategy {
+//func (fdo *funcOption) getBackPressureStrategy() backpressureStrategy {
 //	return fdo.backPressureStrategy
 //}
 //
@@ -152,7 +152,7 @@ package rxgo
 //}
 //
 //// WithBackPressureStrategy sets the back pressure strategy: drop or block.
-//// func WithBackPressureStrategy(strategy BackpressureStrategy) Option {
+//// func WithBackPressureStrategy(strategy backpressureStrategy) Option {
 //// 	return newFuncOption(func(options *funcOption) {
 //// 		options.backPressureStrategy = strategy
 //// 	})
