@@ -161,22 +161,20 @@ func (o *Observable[T]) Connect() {
 					return
 				}
 
-				if o.opts.backpressureStrategy == DropBackpressureStrategy {
-					select {
-					case o.downstream.Send() <- item:
-					default:
-						continue
-					}
-				} else {
-					o.downstream.Send() <- item
-				}
-
 				if item.Err() != nil && o.opts.errorStrategy == StopOnErrorStrategy {
+					o.downstream.Error(item.Err())
 					return
 				}
 
-				if item.Kind() == CompleteKind {
+				if item.Done() {
+					o.downstream.Complete()
 					return
+				}
+
+				if o.opts.backpressureStrategy == DropBackpressureStrategy {
+					o.downstream.TrySend(item)
+				} else {
+					o.downstream.Send(item)
 				}
 			}
 		}

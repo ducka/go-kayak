@@ -7,8 +7,9 @@ import (
 type StreamWriter[T any] interface {
 	Write(value T)
 	Error(err error)
-	Send() chan<- Notification[T]
 	Complete()
+	Send(notification Notification[T])
+	TrySend(notification Notification[T]) bool
 }
 
 type StreamReader[T any] interface {
@@ -61,11 +62,21 @@ func (s *stream[T]) Complete() {
 	s.send() <- Complete[T]()
 }
 
-// Send will Send the notification to the stream
-func (s *stream[T]) Send() chan<- Notification[T] {
+func (s *stream[T]) Send(notification Notification[T]) {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
-	return s.send()
+	s.ch <- notification
+}
+
+func (s *stream[T]) TrySend(notification Notification[T]) bool {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	select {
+	case s.ch <- notification:
+		return true
+	default:
+		return false
+	}
 }
 
 func (s *stream[T]) send() chan<- Notification[T] {

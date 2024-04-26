@@ -39,7 +39,8 @@ func TestObservable(t *testing.T) {
 			ob,
 			func(upstream StreamReader[int], downstream StreamWriter[int]) {
 				for item := range upstream.Read() {
-					downstream.Send() <- item
+					downstream.Send(item)
+					//downstream.Send() <- item
 				}
 			},
 			WithActivityName("operation observable"))
@@ -59,6 +60,9 @@ func TestObservable(t *testing.T) {
 			subscriber.Complete()
 		},
 			WithActivityName("producer observable"),
+
+			// TODO: There seems to be a panic occurring when executing both of these strategies together.
+			// it'll have something to do with that select statement with the drop strategy in Connect.
 			WithErrorStrategy(ContinueOnErrorStrategy),
 			WithBackpressureStrategy(DropBackpressureStrategy),
 		)
