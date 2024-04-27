@@ -12,7 +12,7 @@ TODO
 - You can use subjects to implement fork and merge patterns.
 */
 
-package streamsv2
+package kayak
 
 import (
 	"context"
@@ -149,7 +149,7 @@ func (o *Observable[T]) Connect() {
 	upstream := newStream[T]()
 
 	go func() {
-		defer upstream.Close()
+		//defer upstream.Close()
 		defer o.downstream.Close()
 
 		for {
@@ -166,10 +166,10 @@ func (o *Observable[T]) Connect() {
 					return
 				}
 
-				if item.Done() {
-					o.downstream.Complete()
-					return
-				}
+				//if item.Done() {
+				//	o.downstream.Complete()
+				//	return
+				//}
 
 				if o.opts.backpressureStrategy == DropBackpressureStrategy {
 					o.downstream.TrySend(item)
@@ -180,7 +180,10 @@ func (o *Observable[T]) Connect() {
 		}
 	}()
 
-	go o.upstreamCallback(upstream, o.opts)
+	go func() {
+		defer upstream.Close()
+		o.upstreamCallback(upstream, o.opts)
+	}()
 
 	o.connected = true
 

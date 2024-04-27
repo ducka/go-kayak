@@ -1,4 +1,4 @@
-package streamsv2
+package kayak
 
 // Map transforms the items emitted by an Observable by applying a function to each item.
 func Map[TIn any, TOut any](mapper func(TIn, uint) (TOut, error)) OperatorFunc[TIn, TOut] {

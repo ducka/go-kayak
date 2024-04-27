@@ -1,4 +1,4 @@
-package streamsv2
+package kayak
 
 // NotificationKind
 type NotificationKind string

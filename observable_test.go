@@ -1,12 +1,60 @@
-package streamsv2
+package kayak
 
 import (
 	"fmt"
 	"testing"
 	"time"
+
+	"github.com/stretchr/testify/mock"
 )
 
-func TestObservable(t *testing.T) {
+type SubscriberMock[T any] struct {
+	mock.Mock
+}
+
+func (s *SubscriberMock[T]) OnNext(next T) {
+	s.Called(next)
+}
+
+func (s *SubscriberMock[T]) OnError(err error) {
+	s.Called(err)
+}
+
+func (s *SubscriberMock[T]) OnComplete() {
+	s.Called()
+}
+
+func TestObserveProducer(t *testing.T) {
+
+	//t.Run("When subscribing to an observable that produces 10 integers", func(t *testing.T) {
+	//	sequence := []int{1, 2, 3, 4, 5}
+	//	subscriberMock := SubscriberMock[int]{}
+	//
+	//	sut := ObserveProducer[int](func(stream StreamWriter[int]) {
+	//		for _, v := range sequence {
+	//			stream.Write(v)
+	//		}
+	//		stream.Complete()
+	//	})
+	//
+	//	t.Run("And subscribing to the observable", func(t *testing.T) {
+	//		sut.Observe()
+	//		sut.Subscribe(
+	//			func(v int) {
+	//
+	//			}
+	//		)
+	//
+	//		fmt.Println("test")
+	//	})
+	//
+	//	t.Run("Then the observer should receive all 10 integers", func(t *testing.T) {
+	//		fmt.Println("test")
+	//
+	//	})
+	//
+	//})
+
 	t.Run("Observe producer test", func(t *testing.T) {
 		ob := ObserveProducer[int](func(subscriber StreamWriter[int]) {
 			for i := 0; i < 10; i++ {
