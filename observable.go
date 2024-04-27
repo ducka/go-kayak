@@ -149,7 +149,6 @@ func (o *Observable[T]) Connect() {
 	upstream := newStream[T]()
 
 	go func() {
-		//defer upstream.Close()
 		defer o.downstream.Close()
 
 		for {
@@ -165,11 +164,6 @@ func (o *Observable[T]) Connect() {
 					o.downstream.Error(item.Err())
 					return
 				}
-
-				//if item.Done() {
-				//	o.downstream.Complete()
-				//	return
-				//}
 
 				if o.opts.backpressureStrategy == DropBackpressureStrategy {
 					o.downstream.TrySend(item)
@@ -243,6 +237,25 @@ func (o *Observable[T]) Observe() StreamReader[T] {
 	return o.downstream
 }
 
+func (o *Observable[T]) ToArray() []Notification[T] {
+	notifications := make([]Notification[T], 0)
+	wg := &sync.WaitGroup{}
+	wg.Add(1)
+
+	go func() {
+		for item := range o.downstream.Read() {
+			notifications = append(notifications, item)
+		}
+		wg.Done()
+	}()
+
+	o.Connect()
+
+	wg.Wait()
+
+	return notifications
+}
+
 // Subscribe starts the synchronous observation of the observable
 func (o *Observable[T]) Subscribe(onNext OnNextFunc[T], options ...SubscribeOption) {
 	subscribeOptions := &subscribeOptions{
@@ -265,10 +278,6 @@ func (o *Observable[T]) Subscribe(onNext OnNextFunc[T], options ...SubscribeOpti
 			if item.Err() != nil {
 				subscribeOptions.onError(item.Err())
 				continue
-			}
-
-			if item.Done() {
-				return
 			}
 
 			onNext(item.Value())

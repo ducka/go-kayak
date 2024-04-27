@@ -7,7 +7,6 @@ import (
 type StreamWriter[T any] interface {
 	Write(value T)
 	Error(err error)
-	Complete()
 	Send(notification Notification[T])
 	TrySend(notification Notification[T]) bool
 }
@@ -54,12 +53,6 @@ func (s *stream[T]) Error(err error) {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 	s.send() <- Error[T](err)
-}
-
-func (s *stream[T]) Complete() {
-	s.mu.RLock()
-	defer s.mu.RUnlock()
-	s.send() <- Complete[T]()
 }
 
 func (s *stream[T]) Send(notification Notification[T]) {

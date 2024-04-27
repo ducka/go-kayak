@@ -25,8 +25,6 @@ func Map[TIn any, TOut any](mapper func(TIn, uint) (TOut, error)) OperatorFunc[T
 						downstream.Write(output)
 					case ErrorKind:
 						downstream.Error(item.Err())
-					case CompleteKind:
-						downstream.Complete()
 					}
 				}
 			}, WithActivityName("map observable"))
