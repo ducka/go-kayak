@@ -6,7 +6,7 @@ import (
 
 type StreamWriter[T any] interface {
 	Write(value T)
-	Error(err error)
+	Error(err error, value ...T)
 	Send(notification Notification[T])
 	TrySend(notification Notification[T]) bool
 }
@@ -49,10 +49,16 @@ func (s *stream[T]) Write(value T) {
 	s.send() <- Next[T](value)
 }
 
-func (s *stream[T]) Error(err error) {
+func (s *stream[T]) Error(err error, value ...T) {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
-	s.send() <- Error[T](err)
+
+	var v T
+	if len(value) > 0 {
+		v = value[0]
+	}
+
+	s.send() <- Error[T](err, v)
 }
 
 func (s *stream[T]) Send(notification Notification[T]) {

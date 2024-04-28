@@ -102,7 +102,7 @@ func (o *Observable[T]) Connect() {
 				}
 
 				if item.Err() != nil && o.opts.errorStrategy == StopOnError {
-					o.downstream.Error(item.Err())
+					o.downstream.Send(item)
 					return
 				}
 

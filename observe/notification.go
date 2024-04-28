@@ -40,6 +40,10 @@ func Next[T any](v T) Notification[T] {
 	return &notification[T]{kind: NextKind, v: v}
 }
 
-func Error[T any](err error) Notification[T] {
-	return &notification[T]{kind: ErrorKind, err: err}
+func Error[T any](err error, value ...T) Notification[T] {
+	var v T
+	if len(value) > 0 {
+		v = value[0]
+	}
+	return &notification[T]{kind: ErrorKind, err: err, v: v}
 }

@@ -26,7 +26,7 @@ func Map[TIn any, TOut any](mapper MapFunc[TIn, TOut], options ...observe.Observ
 						index++
 
 						if err != nil {
-							downstream.Error(err)
+							downstream.Error(err, output)
 							continue
 						}
 
