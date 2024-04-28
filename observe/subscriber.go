@@ -1,4 +1,4 @@
-package kayak
+package observe
 
 import (
 	"sync"

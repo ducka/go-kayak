@@ -1,4 +1,4 @@
-package kayak
+package observe
 
 import (
 	"errors"
@@ -34,7 +34,7 @@ func TestObservable(t *testing.T) {
 		sut := ObserveProducer[int](produceSquence(expected...), WithErrorStrategy(StopOnError))
 
 		t.Run("Then the emitted expected should terminate when an error is encountered", func(t *testing.T) {
-			assertSequence(t, expected[:2], sut.ToArray())
+			assertSequence(t, expected[:2], sut.ToResult())
 		})
 	})
 
@@ -43,7 +43,7 @@ func TestObservable(t *testing.T) {
 		sut := ObserveProducer[int](produceSquence(expected...), WithErrorStrategy(ContinueOnError))
 
 		t.Run("Then the emitted sequence should complete regardless of encountered errors", func(t *testing.T) {
-			assertSequence(t, expected, sut.ToArray())
+			assertSequence(t, expected, sut.ToResult())
 		})
 	})
 
@@ -145,7 +145,7 @@ func TestObservable(t *testing.T) {
 			WithPool(poolSize),
 		)
 
-		op.ToArray()
+		op.ToResult()
 
 		t.Run("Then the pool should be fully utilized", func(t *testing.T) {
 			assert.Equal(t, poolSize, activeProducers)

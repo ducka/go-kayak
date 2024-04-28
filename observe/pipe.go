@@ -1,4 +1,8 @@
-package kayak
+package observe
+
+type (
+	OperatorFunc[I any, O any] func(source *Observable[I]) *Observable[O]
+)
 
 // If there is a commonly used sequence of operators in your code, use the `Pipe` function to
 // extract the sequence into a new operator. Even if a sequence is not that common, breaking

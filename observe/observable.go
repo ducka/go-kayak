@@ -12,26 +12,16 @@ TODO
 - You can use subjects to implement fork and merge patterns.
 */
 
-package kayak
+package observe
 
 import (
 	"sync"
 )
 
 type (
-	// OnErrorFunc defines a function that computes a value from an error.
-	OnErrorFunc                   func(error)
-	OnCompleteFunc                func()
-	OnNextFunc[T any]             func(v T)
-	ErrorFunc                     func() error
-	OperatorFunc[I any, O any]    func(source *Observable[I]) *Observable[O]
-	DurationFunc[T any, R any]    func(value T) Observable[R]
-	PredicateFunc[T any]          func(value T, index uint) bool
-	ProjectionFunc[T any, R any]  func(value T, index uint) Observable[R]
-	ComparerFunc[A any, B any]    func(prev A, curr B) int8
-	ComparatorFunc[A any, B any]  func(prev A, curr B) bool
-	AccumulatorFunc[A any, V any] func(acc A, value V, index uint) (A, error)
-	// ProducerFunc is a function that produces elements for an observable
+	OnErrorFunc                      func(error)
+	OnCompleteFunc                   func()
+	OnNextFunc[T any]                func(v T)
 	ProducerFunc[T any]              func(streamWriter StreamWriter[T])
 	OperationFunc[TIn any, TOut any] func(StreamReader[TIn], StreamWriter[TOut])
 
@@ -133,6 +123,14 @@ func (o *Observable[T]) Connect() {
 	o.connected = true
 }
 
+func Sequence[T any](sequence []T, options ...ObservableOption) *Observable[T] {
+	return ObserveProducer[T](func(streamWriter StreamWriter[T]) {
+		for _, item := range sequence {
+			streamWriter.Write(item)
+		}
+	}, options...)
+}
+
 // ObserveProducer observes items produced by a callback function
 func ObserveProducer[T any](producer ProducerFunc[T], options ...ObservableOption) *Observable[T] {
 	return newObservable[T](
@@ -206,8 +204,7 @@ type Observable[T any] struct {
 func (o *Observable[T]) Observe() StreamReader[T] {
 	return o.downstream
 }
-
-func (o *Observable[T]) ToArray() []Notification[T] {
+func (o *Observable[T]) ToResult() []Notification[T] {
 	notifications := make([]Notification[T], 0)
 	wg := &sync.WaitGroup{}
 	wg.Add(1)
