@@ -14,6 +14,7 @@ type Notification[T any] interface {
 	Kind() NotificationKind
 	Value() T // returns the underlying value if it's a "Next" notification
 	Err() error
+	Ok() bool
 }
 
 type notification[T any] struct {
@@ -34,6 +35,10 @@ func (d notification[T]) Value() T {
 
 func (d notification[T]) Err() error {
 	return d.err
+}
+
+func (d notification[T]) Ok() bool {
+	return d.err == nil
 }
 
 func Next[T any](v T) Notification[T] {
