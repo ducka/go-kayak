@@ -5,6 +5,71 @@ import (
 	"runtime"
 )
 
+type options struct {
+	ctx                  context.Context
+	activity             string
+	backpressureStrategy BackpressureStrategy
+	errorStrategy        ErrorStrategy
+	poolSize             int
+}
+
+func newOptions() options {
+	return options{
+		ctx:                  context.Background(),
+		backpressureStrategy: Block,
+		errorStrategy:        StopOnError,
+	}
+}
+
+func (o options) Clone() options {
+	return options{
+		ctx: o.ctx,
+	}
+}
+
+type Option func(options *options)
+
+func WithContext(ctx context.Context) Option {
+	return func(options *options) {
+		options.ctx = ctx
+	}
+}
+
+func WithErrorStrategy(strategy ErrorStrategy) Option {
+	return func(options *options) {
+		options.errorStrategy = strategy
+	}
+}
+
+func WithBackpressureStrategy(strategy BackpressureStrategy) Option {
+	return func(options *options) {
+		options.backpressureStrategy = strategy
+	}
+}
+
+func WithActivityName(activityName string) Option {
+	return func(options *options) {
+		options.activity = activityName
+	}
+}
+
+// WithCPUPool sets the number of goroutines to use for currently processing items to the number of CPU cores on the host machine
+func WithCPUPool() Option {
+	return WithPool(runtime.NumCPU())
+}
+
+// WithPool sets the number of goroutines to use for concurrently processing items
+func WithPool(poolSize int) Option {
+	return func(options *options) {
+		if poolSize < 1 {
+			options.poolSize = 1
+			return
+		}
+
+		options.poolSize = poolSize
+	}
+}
+
 type subscribeOptions struct {
 	onError    OnErrorFunc
 	onComplete OnCompleteFunc
@@ -21,70 +86,5 @@ func WithOnError(onError OnErrorFunc) SubscribeOption {
 func WithOnComplete(onComplete OnCompleteFunc) SubscribeOption {
 	return func(options *subscribeOptions) {
 		options.onComplete = onComplete
-	}
-}
-
-type observableOptions struct {
-	ctx                  context.Context
-	activity             string
-	backpressureStrategy BackpressureStrategy
-	errorStrategy        ErrorStrategy
-	poolSize             int
-}
-
-func newObservableOptions() observableOptions {
-	return observableOptions{
-		ctx:                  context.Background(),
-		backpressureStrategy: Block,
-		errorStrategy:        StopOnError,
-	}
-}
-
-func (o observableOptions) Clone() observableOptions {
-	return observableOptions{
-		ctx: o.ctx,
-	}
-}
-
-type ObservableOption func(options *observableOptions)
-
-func WithContext(ctx context.Context) ObservableOption {
-	return func(options *observableOptions) {
-		options.ctx = ctx
-	}
-}
-
-func WithErrorStrategy(strategy ErrorStrategy) ObservableOption {
-	return func(options *observableOptions) {
-		options.errorStrategy = strategy
-	}
-}
-
-func WithBackpressureStrategy(strategy BackpressureStrategy) ObservableOption {
-	return func(options *observableOptions) {
-		options.backpressureStrategy = strategy
-	}
-}
-
-func WithActivityName(activityName string) ObservableOption {
-	return func(options *observableOptions) {
-		options.activity = activityName
-	}
-}
-
-// WithCPUPool sets the number of goroutines to use for currently processing items to the number of CPU cores on the host machine
-func WithCPUPool() ObservableOption {
-	return WithPool(runtime.NumCPU())
-}
-
-// WithPool sets the number of goroutines to use for concurrently processing items
-func WithPool(poolSize int) ObservableOption {
-	return func(options *observableOptions) {
-		if poolSize < 1 {
-			options.poolSize = 1
-			return
-		}
-
-		options.poolSize = poolSize
 	}
 }

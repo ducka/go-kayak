@@ -29,7 +29,7 @@ const (
 )
 
 // Sequence observes an array of values
-func Sequence[T any](sequence []T, options ...ObservableOption) *Observable[T] {
+func Sequence[T any](sequence []T, options ...Option) *Observable[T] {
 	return Producer[T](func(streamWriter StreamWriter[T]) {
 		for _, item := range sequence {
 			streamWriter.Write(item)
@@ -38,9 +38,9 @@ func Sequence[T any](sequence []T, options ...ObservableOption) *Observable[T] {
 }
 
 // Producer observes items produced by a callback function
-func Producer[T any](producer ProducerFunc[T], options ...ObservableOption) *Observable[T] {
+func Producer[T any](producer ProducerFunc[T], options ...Option) *Observable[T] {
 	return newObservable[T](
-		func(streamWriter StreamWriter[T], opts observableOptions) {
+		func(streamWriter StreamWriter[T], opts options) {
 			producer(streamWriter)
 		},
 		options...,
@@ -53,10 +53,10 @@ func Producer[T any](producer ProducerFunc[T], options ...ObservableOption) *Obs
 func Operation[TIn any, TOut any](
 	source *Observable[TIn],
 	operation OperationFunc[TIn, TOut],
-	options ...ObservableOption,
+	options ...Option,
 ) *Observable[TOut] {
 	observable := newObservableWithParent[TOut](
-		func(downstream StreamWriter[TOut], opts observableOptions) {
+		func(downstream StreamWriter[TOut], opts options) {
 			upstream := source.ToStream()
 			usePool := opts.poolSize > 1
 
@@ -96,12 +96,12 @@ func Operation[TIn any, TOut any](
 	return observable
 }
 
-func newObservable[T any](upstreamCallback func(streamWriter StreamWriter[T], options observableOptions), options ...ObservableOption) *Observable[T] {
+func newObservable[T any](upstreamCallback func(streamWriter StreamWriter[T], options options), options ...Option) *Observable[T] {
 	return newObservableWithParent[T](upstreamCallback, nil, options...)
 }
 
-func newObservableWithParent[T any](source func(streamWriter StreamWriter[T], options observableOptions), parent parentObservable, options ...ObservableOption) *Observable[T] {
-	opts := newObservableOptions()
+func newObservableWithParent[T any](source func(streamWriter StreamWriter[T], options options), parent parentObservable, options ...Option) *Observable[T] {
+	opts := newOptions()
 
 	if parent != nil {
 		opts.ctx = parent.context()
@@ -127,9 +127,9 @@ type parentObservable interface {
 
 type Observable[T any] struct {
 	mu   *sync.Mutex
-	opts observableOptions
+	opts options
 	// source is a function that produces the upstream stream of items to be observed
-	source func(StreamWriter[T], observableOptions)
+	source func(StreamWriter[T], options)
 	// parent is the observable that has produced the upstream downstream of items
 	parent parentObservable
 	// downstream is the stream that will Send items to the observer
