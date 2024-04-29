@@ -29,21 +29,21 @@ const (
 )
 
 // Sequence observes an array of values
-func Sequence[T any](sequence []T, options ...Option) *Observable[T] {
+func Sequence[T any](sequence []T, opts ...Option) *Observable[T] {
 	return Producer[T](func(streamWriter StreamWriter[T]) {
 		for _, item := range sequence {
 			streamWriter.Write(item)
 		}
-	}, options...)
+	}, opts...)
 }
 
 // Producer observes items produced by a callback function
-func Producer[T any](producer ProducerFunc[T], options ...Option) *Observable[T] {
+func Producer[T any](producer ProducerFunc[T], opts ...Option) *Observable[T] {
 	return newObservable[T](
 		func(streamWriter StreamWriter[T], opts options) {
 			producer(streamWriter)
 		},
-		options...,
+		opts...,
 	)
 }
 
@@ -53,7 +53,7 @@ func Producer[T any](producer ProducerFunc[T], options ...Option) *Observable[T]
 func Operation[TIn any, TOut any](
 	source *Observable[TIn],
 	operation OperationFunc[TIn, TOut],
-	options ...Option,
+	opts ...Option,
 ) *Observable[TOut] {
 	observable := newObservableWithParent[TOut](
 		func(downstream StreamWriter[TOut], opts options) {
@@ -90,7 +90,7 @@ func Operation[TIn any, TOut any](
 			}
 		},
 		source,
-		options...,
+		opts...,
 	)
 
 	return observable
