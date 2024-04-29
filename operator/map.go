@@ -16,7 +16,7 @@ func Map[TIn any, TOut any](mapper MapFunc[TIn, TOut], options ...observe.Observ
 	return func(source *observe.Observable[TIn]) *observe.Observable[TOut] {
 		var index int
 
-		return observe.ObserveOperation[TIn, TOut](
+		return observe.Operation[TIn, TOut](
 			source,
 			func(upstream observe.StreamReader[TIn], downstream observe.StreamWriter[TOut]) {
 				for item := range upstream.Read() {

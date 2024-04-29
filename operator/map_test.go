@@ -21,9 +21,14 @@ func TestMap(t *testing.T) {
 			})(ob)
 
 			t.Run("Then the emitted integers should now be strings", func(t *testing.T) {
-				actual := toResultValues(m)
-
-				assert.EqualValues(t, []string{"1", "2", "3"}, actual)
+				assert.EqualValues(t,
+					[]observe.Notification[string]{
+						observe.Next("1"),
+						observe.Next("2"),
+						observe.Next("3"),
+					},
+					m.ToResult(),
+				)
 			})
 		})
 	})
@@ -34,17 +39,23 @@ func TestMap(t *testing.T) {
 		ob := observe.Sequence(sequence)
 
 		t.Run("And an error occurs midway", func(t *testing.T) {
+			err := errors.New("error")
 			m := Map(func(item int, index int) (string, error) {
 				if item == 2 {
-					return "2", errors.New("error")
+					return "2", err
 				}
 				return strconv.Itoa(item), nil
 			})(ob)
 
-			t.Run("Then the emitted integers should now be strings", func(t *testing.T) {
-				actual := m.ToResult()
-
-				assert.EqualValues(t, []string{"1", "2", "3"}, actual)
+			t.Run("Then the emitted notifications should be a mixture of strings and errors", func(t *testing.T) {
+				assert.EqualValues(t,
+					[]observe.Notification[string]{
+						observe.Next("1"),
+						observe.Error(err, "2"),
+						observe.Next("3"),
+					},
+					m.ToResult(),
+				)
 			})
 		})
 	})

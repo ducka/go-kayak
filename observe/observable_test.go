@@ -1,6 +1,7 @@
 package observe
 
 import (
+	"context"
 	"errors"
 	"sync"
 	"testing"
@@ -11,13 +12,13 @@ import (
 )
 
 func TestObservable(t *testing.T) {
-	t.Run("When observing a sequence of elements", func(t *testing.T) {
+	t.Run("When observing a sequence of {1, 2, 3}", func(t *testing.T) {
 		sequence := []any{1, 2, 3}
 
-		sut := ObserveProducer[int](produceSquence(sequence...), WithErrorStrategy(StopOnError))
+		sut := Producer[int](produceSequence(sequence...), WithErrorStrategy(StopOnError))
 
-		t.Run("Then the subscriber functions should be invoked in the expected order", func(t *testing.T) {
-			subscriberMock := makeSubscriber(sequence...)
+		t.Run("Then the subscriber functions should be invoked as OnNext(1), OnNext(2), OnNext(3), OnComplete(finished)", func(t *testing.T) {
+			subscriberMock := makeSubscriber(StopOnError, sequence...)
 
 			sut.Subscribe(
 				subscriberMock.OnNext,
@@ -29,9 +30,57 @@ func TestObservable(t *testing.T) {
 		})
 	})
 
+	t.Run("When observing a sequence of {1, error, 3 } and we're using the StopOnError strategy", func(t *testing.T) {
+		err := errors.New("error")
+		sequence := []any{1, err, 3}
+
+		sut := Producer[int](produceSequence(sequence...), WithErrorStrategy(StopOnError))
+
+		t.Run("Then the subscriber functions should be invoked as OnNext(1), OnError, OnComplete(error)", func(t *testing.T) {
+			subscriberMock := makeSubscriber(StopOnError, sequence...)
+
+			sut.Subscribe(
+				subscriberMock.OnNext,
+				WithOnError(subscriberMock.OnError),
+				WithOnComplete(subscriberMock.OnComplete),
+			)
+
+			subscriberMock.AssertExpectations(t)
+		})
+	})
+
+	t.Run("When defining an observable with a context that cancels half way through observation", func(t *testing.T) {
+		ctx, cancel := context.WithCancel(context.Background())
+		sequenceLength := 20
+
+		sut := Producer[int](
+			func(streamWriter StreamWriter[int]) {
+				for i := 0; i < sequenceLength; i++ {
+					// Cancel the context of the observable half way through the producer processing the sequence
+					if sequenceLength/2 == i {
+						cancel()
+					}
+
+					streamWriter.Write(i)
+				}
+			},
+			WithContext(ctx),
+		)
+
+		results := sut.ToResult()
+
+		t.Run("Then the last emitted element should be a context cancellation error", func(t *testing.T) {
+			assert.Equal(t, Error[int](context.Canceled), results[len(results)-1])
+		})
+
+		t.Run("And the emitted sequence should be shorter than the upstream sequence", func(t *testing.T) {
+			assert.Less(t, len(results), sequenceLength)
+		})
+	})
+
 	t.Run("When an observable uses a StopOnError", func(t *testing.T) {
 		expected := []any{1, errors.New("error"), 2}
-		sut := ObserveProducer[int](produceSquence(expected...), WithErrorStrategy(StopOnError))
+		sut := Producer[int](produceSequence(expected...), WithErrorStrategy(StopOnError))
 
 		t.Run("Then the emitted expected should terminate when an error is encountered", func(t *testing.T) {
 			assertSequence(t, expected[:2], sut.ToResult())
@@ -40,7 +89,7 @@ func TestObservable(t *testing.T) {
 
 	t.Run("When an observable uses a ContinueOnError", func(t *testing.T) {
 		expected := []any{1, errors.New("error"), 2}
-		sut := ObserveProducer[int](produceSquence(expected...), WithErrorStrategy(ContinueOnError))
+		sut := Producer[int](produceSequence(expected...), WithErrorStrategy(ContinueOnError))
 
 		t.Run("Then the emitted sequence should complete regardless of encountered errors", func(t *testing.T) {
 			assertSequence(t, expected, sut.ToResult())
@@ -52,7 +101,7 @@ func TestObservable(t *testing.T) {
 		wg := &sync.WaitGroup{}
 		wg.Add(1)
 
-		sut := ObserveProducer[int](func(streamWriter StreamWriter[int]) {
+		sut := Producer[int](func(streamWriter StreamWriter[int]) {
 			for i := 0; i < sequenceLength; i++ {
 				streamWriter.Write(i)
 			}
@@ -75,7 +124,7 @@ func TestObservable(t *testing.T) {
 
 	t.Run("When an observable uses a Block backpressure strategy", func(t *testing.T) {
 		sequenceLength := 100
-		sut := ObserveProducer[int](func(streamWriter StreamWriter[int]) {
+		sut := Producer[int](func(streamWriter StreamWriter[int]) {
 			for i := 0; i < sequenceLength; i++ {
 				streamWriter.Write(i)
 			}
@@ -97,7 +146,7 @@ func TestObservable(t *testing.T) {
 
 	t.Run("When an observable uses a Block backpressure strategy", func(t *testing.T) {
 		sequenceLength := 100
-		sut := ObserveProducer[int](func(streamWriter StreamWriter[int]) {
+		sut := Producer[int](func(streamWriter StreamWriter[int]) {
 			for i := 0; i < sequenceLength; i++ {
 				streamWriter.Write(i)
 			}
@@ -123,13 +172,13 @@ func TestObservable(t *testing.T) {
 		wg := &sync.WaitGroup{}
 		wg.Add(poolSize)
 
-		ob := ObserveProducer[int](
+		ob := Producer[int](
 			produceNumbers(100),
 		)
 
 		activeProducers := 0
 
-		op := ObserveOperation[int, int](
+		op := Operation[int, int](
 			ob,
 			func(s StreamReader[int], s2 StreamWriter[int]) {
 				// The number of times this operator function executes should equal the pool size. Each operator function has its own
@@ -159,25 +208,37 @@ func TestObservable(t *testing.T) {
 	})
 }
 
-func makeSubscriber(sequence ...any) *SubscriberMock[int] {
+func makeSubscriber(strategy ErrorStrategy, sequence ...any) *SubscriberMock[int] {
 	subscriber := &SubscriberMock[int]{}
 	calls := make([]*mock.Call, 0, len(sequence))
+	var err error
 
 	for _, v := range sequence {
-		if err, ok := v.(error); ok {
+		if err2, ok := v.(error); ok {
+			err = err2
 			calls = append(calls, subscriber.On("OnError", err).Return().NotBefore(calls...).Once())
+
+			if strategy == StopOnError {
+				break
+			}
+
 			continue
 		}
 
 		calls = append(calls, subscriber.On("OnNext", v.(int)).Return().NotBefore(calls...).Once())
 	}
 
-	calls = append(calls, subscriber.On("OnComplete").Return().NotBefore(calls...).Once())
+	reason := Completed
+	if err != nil {
+		reason = Failed
+	}
+
+	calls = append(calls, subscriber.On("OnComplete", reason, err).Return().NotBefore(calls...).Once())
 
 	return subscriber
 }
 
-func produceSquence(sequence ...any) func(stream StreamWriter[int]) {
+func produceSequence(sequence ...any) func(stream StreamWriter[int]) {
 	return func(stream StreamWriter[int]) {
 		for _, v := range sequence {
 			if err, ok := v.(error); ok {
@@ -223,6 +284,6 @@ func (s *SubscriberMock[T]) OnError(err error) {
 	s.Called(err)
 }
 
-func (s *SubscriberMock[T]) OnComplete() {
-	s.Called()
+func (s *SubscriberMock[T]) OnComplete(reason CompleteReason, err error) {
+	s.Called(reason, err)
 }
