@@ -5,7 +5,7 @@ import (
 )
 
 type (
-	PredicateFunc[T any] func(item observe.Notification[T]) bool
+	PredicateFunc[T any] func(item T) bool
 )
 
 func Filter[T any](predicate PredicateFunc[T], opts ...observe.Option) observe.OperatorFunc[T, T] {
@@ -14,7 +14,9 @@ func Filter[T any](predicate PredicateFunc[T], opts ...observe.Option) observe.O
 			source,
 			func(upstream observe.StreamReader[T], downstream observe.StreamWriter[T]) {
 				for i := range upstream.Read() {
-					if predicate(i) {
+					// If the element has a value and satisfies the predicate, emit it; otherwise if the
+					// element is an error, emit it. All others must be filtered out.
+					if (i.HasValue() && predicate(i.Value())) || i.HasError() {
 						downstream.Send(i)
 					}
 				}

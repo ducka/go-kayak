@@ -13,8 +13,8 @@ func TestFilter(t *testing.T) {
 		ob := observe.Sequence(sequence)
 
 		t.Run("When filtering the sequence to emit only even numbers", func(t *testing.T) {
-			of := Filter[int](func(item observe.Notification[int]) bool {
-				return item.Ok() && item.Value()%2 == 0
+			of := Filter[int](func(i int) bool {
+				return i%2 == 0
 			})
 
 			t.Run("Then the sequence should contain only even numbers", func(t *testing.T) {

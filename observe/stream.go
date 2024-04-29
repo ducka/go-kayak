@@ -53,12 +53,12 @@ func (s *stream[T]) Error(err error, value ...T) {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 
-	var v T
 	if len(value) > 0 {
-		v = value[0]
+		s.send() <- Error[T](err, value[0])
+		return
 	}
 
-	s.send() <- Error[T](err, v)
+	s.send() <- Error[T](err)
 }
 
 func (s *stream[T]) Send(notification Notification[T]) {

@@ -49,14 +49,14 @@ func TestObservable(t *testing.T) {
 		})
 	})
 
-	t.Run("When defining an observable with a context that cancels half way through observation", func(t *testing.T) {
+	t.Run("When defining an observable with a getContext that cancels half way through observation", func(t *testing.T) {
 		ctx, cancel := context.WithCancel(context.Background())
 		sequenceLength := 20
 
 		sut := Producer[int](
 			func(streamWriter StreamWriter[int]) {
 				for i := 0; i < sequenceLength; i++ {
-					// Cancel the context of the observable half way through the producer processing the sequence
+					// Cancel the getContext of the observable half way through the producer processing the sequence
 					if sequenceLength/2 == i {
 						cancel()
 					}
@@ -69,7 +69,7 @@ func TestObservable(t *testing.T) {
 
 		results := sut.ToResult()
 
-		t.Run("Then the last emitted element should be a context cancellation error", func(t *testing.T) {
+		t.Run("Then the last emitted element should be a getContext cancellation error", func(t *testing.T) {
 			assert.Equal(t, Error[int](context.Canceled), results[len(results)-1])
 		})
 
