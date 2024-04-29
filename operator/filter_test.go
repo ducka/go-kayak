@@ -15,10 +15,10 @@ func TestFilter(t *testing.T) {
 		t.Run("When filtering the sequence to emit only even numbers", func(t *testing.T) {
 			of := Filter[int](func(i int) bool {
 				return i%2 == 0
-			})
+			})(ob)
 
 			t.Run("Then the sequence should contain only even numbers", func(t *testing.T) {
-				actual := of(ob).ToResult()
+				actual := of.ToResult()
 				expected := convertToNotifications([]int{0, 2, 4, 6, 8})
 				assert.Len(t, actual, 5)
 				assert.Equal(t, expected, actual)

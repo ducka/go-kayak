@@ -105,17 +105,12 @@ func newObservableWithParent[T any](source func(streamWriter StreamWriter[T], op
 
 	// Propagate options down the observable chain
 	if parent != nil {
-		opts.ctx = parent.getContext()
+		opts = parent.cloneOptions()
 	}
 
 	// Apply options to the current observable
 	for _, opt := range options {
 		opt(&opts)
-	}
-
-	// Propagate options back up the observable chain
-	if parent != nil {
-		parent.setErrorStrategy(opts.errorStrategy)
 	}
 
 	return &Observable[T]{
@@ -129,8 +124,7 @@ func newObservableWithParent[T any](source func(streamWriter StreamWriter[T], op
 
 type parentObservable interface {
 	Observe()
-	getContext() context.Context
-	setErrorStrategy(strategy ErrorStrategy)
+	cloneOptions() options
 }
 
 type Observable[T any] struct {
@@ -273,4 +267,11 @@ func (o *Observable[T]) getContext() context.Context {
 
 func (o *Observable[T]) setErrorStrategy(strategy ErrorStrategy) {
 	o.opts.errorStrategy = strategy
+}
+
+func (o *Observable[T]) cloneOptions() options {
+	return options{
+		ctx:           o.opts.ctx,
+		errorStrategy: o.opts.errorStrategy,
+	}
 }

@@ -17,12 +17,12 @@ func TestSort(t *testing.T) {
 			downstream.Write(5)
 			downstream.Error(errors.New("error without value"))
 			downstream.Write(1)
-		})
+		}, observe.WithErrorStrategy(observe.ContinueOnError))
 
 		t.Run("When sorting the sequence in ascending order with a ContinueOnError strategy", func(t *testing.T) {
 			os := Sort[int](func(a, b int) bool {
 				return a < b
-			}, observe.WithErrorStrategy(observe.ContinueOnError))(ob)
+			})(ob)
 
 			actual := os.ToResult()
 

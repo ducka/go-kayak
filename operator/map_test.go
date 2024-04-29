@@ -45,7 +45,7 @@ func TestMap(t *testing.T) {
 					return "2", err
 				}
 				return strconv.Itoa(item), nil
-			})(ob)
+			}, observe.WithErrorStrategy(observe.ContinueOnError))(ob)
 
 			t.Run("Then the emitted notifications should be a mixture of strings and errors", func(t *testing.T) {
 				assert.EqualValues(t,

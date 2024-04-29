@@ -40,7 +40,7 @@ func (d notification[T]) Err() error {
 }
 
 func (d notification[T]) HasError() bool {
-	return d.err == nil
+	return d.err != nil
 }
 
 func (d notification[T]) HasValue() bool {

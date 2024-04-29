@@ -56,14 +56,14 @@ func TestObservable(t *testing.T) {
 			stream.Write(1)
 			stream.Error(err, 2)
 			stream.Write(3)
-		})
+		}, WithErrorStrategy(ContinueOnError))
 
 		t.Run("And an operator processes the sequence with a ContinueOnError strategy", func(t *testing.T) {
 			op := Operation[int, int](sut, func(s StreamReader[int], s2 StreamWriter[int]) {
 				for item := range s.Read() {
 					s2.Send(item)
 				}
-			}, WithErrorStrategy(ContinueOnError))
+			})
 
 			t.Run("Then the observable should emit the full sequence including the error", func(t *testing.T) {
 				actual := op.ToResult()

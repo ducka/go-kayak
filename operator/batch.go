@@ -53,9 +53,11 @@ func batch[T any](batchSize int, flushTimeout *time.Duration, opts ...observe.Op
 						}
 
 						batch = append(batch, item.Value())
+
+						flush = len(batch) == batchSize
 					}
 
-					if len(batch) == batchSize || flush {
+					if flush && len(batch) > 0 {
 						downstream.Write(batch)
 						batch = make([]T, 0, batchSize)
 					}
