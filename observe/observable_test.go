@@ -49,6 +49,37 @@ func TestObservable(t *testing.T) {
 		})
 	})
 
+	t.Run("When observing a sequence that emits an error midway", func(t *testing.T) {
+		err := errors.New("error")
+
+		sut := Producer[int](func(stream StreamWriter[int]) {
+			stream.Write(1)
+			stream.Error(err, 2)
+			stream.Write(3)
+		})
+
+		t.Run("And an operator processes the sequence with a ContinueOnError strategy", func(t *testing.T) {
+			op := Operation[int, int](sut, func(s StreamReader[int], s2 StreamWriter[int]) {
+				for item := range s.Read() {
+					s2.Send(item)
+				}
+			}, WithErrorStrategy(ContinueOnError))
+
+			t.Run("Then the observable should emit the full sequence including the error", func(t *testing.T) {
+				actual := op.ToResult()
+				assert.Equal(t,
+					[]Notification[int]{
+						Next(1),
+						Error(err, 2),
+						Next(3),
+					},
+					actual,
+				)
+
+			})
+		})
+	})
+
 	t.Run("When defining an observable with a getContext that cancels half way through observation", func(t *testing.T) {
 		ctx, cancel := context.WithCancel(context.Background())
 		sequenceLength := 20
