@@ -91,12 +91,3 @@ func (s *stream[T]) Close() {
 	s.closed = true
 	close(s.ch)
 }
-
-type StreamClosedError struct {
-	Message string
-	Code    int
-}
-
-func (e *StreamClosedError) Error() string {
-	return e.Message
-}

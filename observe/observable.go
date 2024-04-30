@@ -57,6 +57,8 @@ func Operation[TIn any, TOut any](
 ) *Observable[TOut] {
 	observable := newObservableWithParent[TOut](
 		func(downstream StreamWriter[TOut], opts options) {
+			opWg := &sync.WaitGroup{}
+			poolWg := &sync.WaitGroup{}
 			upstream := source.ToStream()
 			usePool := opts.poolSize > 1
 
@@ -65,13 +67,19 @@ func Operation[TIn any, TOut any](
 				return
 			}
 
-			// Initialise the pool of operations
+			// Initialise the pool of operations to currently process the upstream
 			pool := make(chan *stream[TIn], opts.poolSize)
-			for i := 0; i < int(opts.poolSize); i++ {
+			poolStreamsToClose := make([]*stream[TIn], opts.poolSize)
+			for i := 0; i < opts.poolSize; i++ {
 				poolStream := newStream[TIn]()
 				pool <- poolStream
+				poolStreamsToClose[i] = poolStream
 
-				go operation(poolStream, downstream)
+				opWg.Add(1)
+				go func(poolStream StreamReader[TIn], downstream StreamWriter[TOut]) {
+					defer opWg.Done()
+					operation(poolStream, downstream)
+				}(poolStream, downstream)
 			}
 
 			// Send items to the next available stream in the pool
@@ -79,15 +87,33 @@ func Operation[TIn any, TOut any](
 				select {
 				case <-opts.ctx.Done():
 					return
-				case nextChan := <-pool:
-					go func(item Notification[TIn], nextStream *stream[TIn], pool chan *stream[TIn]) {
-						nextStream.Send(item)
+				case nextStream := <-pool:
+					poolWg.Add(1)
 
+					go func(item Notification[TIn], nextStream *stream[TIn], pool chan *stream[TIn]) {
+						defer poolWg.Done()
+
+						nextStream.Send(item)
 						// return the stream to the pool
 						pool <- nextStream
-					}(item, nextChan, pool)
+
+					}(item, nextStream, pool)
 				}
 			}
+
+			// Wait until the concurrently running poolStream streams have finished draining
+			poolWg.Wait()
+
+			// Once drained, close the poolStream streams
+			for _, poolStream := range poolStreamsToClose {
+				poolStream.Close()
+			}
+
+			// And close the pool
+			close(pool)
+
+			// Wait until the concurrently executing operations have finished writing to the downstream
+			opWg.Wait()
 		},
 		source,
 		opts...,

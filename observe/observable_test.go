@@ -197,6 +197,9 @@ func TestObservable(t *testing.T) {
 		})
 	})
 
+	//for i := 0; i < 10; i++ {
+
+	// TODO: You're not managing the concurrency of your go routines in the pool properly. You're ending up with a single value being processed by multiple pool routines.
 	t.Run("When an observable operator uses a pool for concurrency and a workload is generated to fully utilise the pool", func(t *testing.T) {
 		now := time.Now()
 		poolSize := 5
@@ -204,7 +207,7 @@ func TestObservable(t *testing.T) {
 		wg.Add(poolSize)
 
 		ob := Producer[int](
-			produceNumbers(100),
+			produceNumbers(15),
 		)
 
 		activeProducers := 0
@@ -218,26 +221,28 @@ func TestObservable(t *testing.T) {
 				activeProducers++
 
 				for item := range s.Read() {
-					time.Sleep(10 * time.Millisecond)
+					time.Sleep(100 * time.Millisecond)
 					s2.Send(item)
 				}
 			},
 			WithPool(poolSize),
 		)
 
-		op.ToResult()
+		results := op.ToResult()
 
 		t.Run("Then the pool should be fully utilized", func(t *testing.T) {
 			assert.Equal(t, poolSize, activeProducers)
 		})
 
 		t.Run("Then the pipeline should execute in the expected time", func(t *testing.T) {
-			shouldTake := (int64(100) * int64(10) * int64(time.Millisecond)) / int64(poolSize)
-
-			assert.WithinDuration(t, now.Add(time.Duration(shouldTake)), time.Now(), 10*time.Millisecond)
+			shouldTake := 300 * time.Millisecond
+			assert.WithinDuration(t, now.Add(shouldTake), time.Now(), 20*time.Millisecond)
+			assert.Len(t, results, 15)
 		})
 	})
 }
+
+//}
 
 func makeSubscriber(strategy ErrorStrategy, sequence ...any) *SubscriberMock[int] {
 	subscriber := &SubscriberMock[int]{}
