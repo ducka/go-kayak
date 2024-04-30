@@ -2,7 +2,6 @@ package observe
 
 import (
 	"context"
-	"fmt"
 	"sync"
 )
 
@@ -204,7 +203,6 @@ func (o *Observable[T]) Observe() {
 				if o.opts.backpressureStrategy == Drop {
 					o.downstream.TrySend(item)
 				} else {
-					fmt.Println("emit", item)
 					o.downstream.Send(item)
 				}
 			}

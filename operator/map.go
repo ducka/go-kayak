@@ -5,7 +5,7 @@ import (
 )
 
 type (
-	MapFunc[TIn, TOut any] func(TIn, int) (TOut, error)
+	MapFunc[TIn, TOut any] func(item TIn, index int) (TOut, error)
 )
 
 // Map transforms the items emitted by an Observable by applying a function to each item.

@@ -9,7 +9,7 @@ import (
 
 func TestFilter(t *testing.T) {
 	t.Run("When emitting a sequence of 10 elements", func(t *testing.T) {
-		sequence := generateIntSequence(10)
+		sequence := GenerateIntSequence(10)
 		ob := observe.Sequence(sequence)
 
 		t.Run("When filtering the sequence to emit only even numbers", func(t *testing.T) {

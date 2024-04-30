@@ -4,7 +4,7 @@ import (
 	"github.com/ducka/go-kayak/observe"
 )
 
-func generateIntSequence(sequenceSize int) []int {
+func GenerateIntSequence(sequenceSize int) []int {
 	sequence := make([]int, sequenceSize)
 	for i := 0; i < sequenceSize; i++ {
 		sequence[i] = i

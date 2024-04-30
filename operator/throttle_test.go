@@ -10,7 +10,7 @@ import (
 
 func TestThrottle(t *testing.T) {
 	t.Run("When emitting a sequence of 5 items", func(t *testing.T) {
-		sequence := generateIntSequence(5)
+		sequence := GenerateIntSequence(5)
 		ob := observe.Sequence(sequence)
 
 		t.Run("When throttling the sequence to emit 1 items every 100ms", func(t *testing.T) {

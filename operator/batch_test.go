@@ -13,7 +13,7 @@ func TestBatch(t *testing.T) {
 	t.Run("When batching up a sequence of 95 integers into 10 batches", func(t *testing.T) {
 		batchSize := 10
 		numberOfItems := 95
-		sequence := generateIntSequence(numberOfItems)
+		sequence := GenerateIntSequence(numberOfItems)
 
 		ob := observe.Sequence(sequence)
 
@@ -43,7 +43,7 @@ func TestBatch(t *testing.T) {
 	t.Run("When emitting a sequence that makes up an incomplete batch", func(t *testing.T) {
 		batchSize := 10
 		numberOfItems := 5
-		sequence := generateIntSequence(numberOfItems)
+		sequence := GenerateIntSequence(numberOfItems)
 
 		ob := observe.Sequence(sequence)
 
@@ -62,7 +62,7 @@ func TestBatch(t *testing.T) {
 		batchSize := 10
 		numberOfItems := 15
 		timeout := time.Millisecond * 50
-		sequence := generateIntSequence(numberOfItems)
+		sequence := GenerateIntSequence(numberOfItems)
 
 		ob := observe.Producer(func(streamWriter observe.StreamWriter[int]) {
 			for i, item := range sequence {
