@@ -2,6 +2,7 @@ package observe
 
 import (
 	"context"
+	"fmt"
 	"sync"
 )
 
@@ -180,7 +181,7 @@ func (o *Observable[T]) Observe() {
 		o.parent.Observe()
 	}
 
-	upstream := newStream[T]()
+	upstream := newStream[T](o.opts.buffer)
 
 	go func() {
 		defer o.downstream.Close()
@@ -203,6 +204,7 @@ func (o *Observable[T]) Observe() {
 				if o.opts.backpressureStrategy == Drop {
 					o.downstream.TrySend(item)
 				} else {
+					fmt.Println("emit", item)
 					o.downstream.Send(item)
 				}
 			}

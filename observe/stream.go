@@ -25,7 +25,7 @@ type stream[T any] struct {
 	closed bool
 }
 
-func newStream[T any](bufferCount ...uint) *stream[T] {
+func newStream[T any](bufferCount ...uint64) *stream[T] {
 	ch := make(chan Notification[T])
 	if len(bufferCount) > 0 {
 		ch = make(chan Notification[T], bufferCount[0])

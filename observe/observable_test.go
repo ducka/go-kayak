@@ -197,9 +197,6 @@ func TestObservable(t *testing.T) {
 		})
 	})
 
-	//for i := 0; i < 10; i++ {
-
-	// TODO: You're not managing the concurrency of your go routines in the pool properly. You're ending up with a single value being processed by multiple pool routines.
 	t.Run("When an observable operator uses a pool for concurrency and a workload is generated to fully utilise the pool", func(t *testing.T) {
 		now := time.Now()
 		poolSize := 5
@@ -240,9 +237,39 @@ func TestObservable(t *testing.T) {
 			assert.Len(t, results, 15)
 		})
 	})
-}
 
-//}
+	t.Run("When configuring an observable with a buffer", func(t *testing.T) {
+		actual := uint64(0)
+		bufferSize := uint64(10)
+
+		ob := Producer[int](
+			func(streamWriter StreamWriter[int]) {
+				for i := 0; i < 15; i++ {
+					// increment the counter to observe the buffer filling up
+					actual++
+
+					streamWriter.Write(i)
+				}
+
+			},
+			WithBuffer(bufferSize),
+		)
+
+		// Execute observe, but don't read the sequence. This will trigger the buffer
+		// filling up, but it won't drain the observable
+		ob.Observe()
+
+		// Sleep to give the go routines internal to the Observer time to execute
+		time.Sleep(100 * time.Millisecond)
+
+		t.Run("Then the observables buffer should fill up when the observable is observed", func(t *testing.T) {
+			// We add 2 here to account for channels internal to the Observer that are being primed with items
+			expected := bufferSize + 2
+
+			assert.Equal(t, expected, actual)
+		})
+	})
+}
 
 func makeSubscriber(strategy ErrorStrategy, sequence ...any) *SubscriberMock[int] {
 	subscriber := &SubscriberMock[int]{}

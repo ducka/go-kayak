@@ -11,6 +11,7 @@ type options struct {
 	backpressureStrategy BackpressureStrategy
 	errorStrategy        ErrorStrategy
 	poolSize             int
+	buffer               uint64
 }
 
 func newOptions() options {
@@ -18,6 +19,7 @@ func newOptions() options {
 		ctx:                  context.Background(),
 		backpressureStrategy: Block,
 		errorStrategy:        StopOnError,
+		buffer:               0,
 	}
 }
 
@@ -50,6 +52,12 @@ func WithBackpressureStrategy(strategy BackpressureStrategy) Option {
 func WithActivityName(activityName string) Option {
 	return func(options *options) {
 		options.activity = activityName
+	}
+}
+
+func WithBuffer(buffer uint64) func(options *options) {
+	return func(options *options) {
+		options.buffer = buffer
 	}
 }
 
