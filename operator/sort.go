@@ -10,7 +10,7 @@ type (
 	SorterFunc[T any] func(left, right T) bool
 )
 
-func Sort[T any](comparer SorterFunc[T], opts ...observe.Option) observe.OperatorFunc[T, T] {
+func Sort[T any](comparer SorterFunc[T], opts ...observe.Option) OperatorFunc[T, T] {
 	return func(source *observe.Observable[T]) *observe.Observable[T] {
 		return observe.Operation[T, T](
 			source,
