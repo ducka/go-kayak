@@ -28,6 +28,20 @@ const (
 	Completed CompleteReason = "completed"
 )
 
+func Stream[T any](opts ...Option) (StreamWriter[T], *Observable[T]) {
+	source := newStream[T]()
+
+	return source,
+		newObservable[T](
+			func(streamWriter StreamWriter[T], options options) {
+				for item := range source.Read() {
+					streamWriter.Send(item)
+				}
+			},
+			opts...,
+		)
+}
+
 // Sequence observes an array of values
 func Sequence[T any](sequence []T, opts ...Option) *Observable[T] {
 	return Producer[T](func(streamWriter StreamWriter[T]) {

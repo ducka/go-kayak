@@ -9,6 +9,7 @@ type StreamWriter[T any] interface {
 	Error(err error, value ...T)
 	Send(notification Notification[T])
 	TrySend(notification Notification[T]) bool
+	Close()
 }
 
 type StreamReader[T any] interface {

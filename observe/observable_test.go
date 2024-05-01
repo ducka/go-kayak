@@ -269,6 +269,27 @@ func TestObservable(t *testing.T) {
 			assert.Equal(t, expected, actual)
 		})
 	})
+
+	t.Run("When observing a stream", func(t *testing.T) {
+		sw, obs := Stream[int]()
+		sequence := generateIntSequence(20)
+
+		t.Run("When sending a sequence of integers on the stream", func(t *testing.T) {
+			go func() {
+				defer sw.Close()
+
+				for _, item := range sequence {
+					sw.Write(item)
+				}
+			}()
+
+			t.Run("Then the sequence of integers should be emitted", func(t *testing.T) {
+				actual := obs.ToResult()
+				expected := convertToNotifications(sequence)
+				assert.Equal(t, expected, actual)
+			})
+		})
+	})
 }
 
 func makeSubscriber(strategy ErrorStrategy, sequence ...any) *SubscriberMock[int] {
@@ -349,4 +370,20 @@ func (s *SubscriberMock[T]) OnError(err error) {
 
 func (s *SubscriberMock[T]) OnComplete(reason CompleteReason, err error) {
 	s.Called(reason, err)
+}
+
+func generateIntSequence(sequenceSize int) []int {
+	sequence := make([]int, sequenceSize)
+	for i := 0; i < sequenceSize; i++ {
+		sequence[i] = i
+	}
+	return sequence
+}
+
+func convertToNotifications[T any](sequence []T) []Notification[T] {
+	notifications := make([]Notification[T], len(sequence))
+	for i, item := range sequence {
+		notifications[i] = Next(item)
+	}
+	return notifications
 }
