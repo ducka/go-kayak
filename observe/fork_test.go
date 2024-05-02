@@ -16,8 +16,8 @@ func TestFork(t *testing.T) {
 	t.Run("When forking an observed sequence of integers", func(t *testing.T) {
 		wg := &sync.WaitGroup{}
 		wg.Add(2)
-		sequence := generateIntSequence(10)
-		expected := convertToNotifications(sequence)
+		sequence := GenerateIntSequence(0, 10)
+		expected := ConvertToNotifications(sequence...)
 
 		ob := Sequence[int](sequence)
 

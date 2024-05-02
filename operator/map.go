@@ -32,7 +32,7 @@ func Map[TIn any, TOut any](mapper MapFunc[TIn, TOut], options ...observe.Option
 
 						downstream.Write(output)
 					case observe.ErrorKind:
-						downstream.Error(item.Err())
+						downstream.Error(item.Error())
 					}
 				}
 			},

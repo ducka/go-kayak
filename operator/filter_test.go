@@ -9,7 +9,7 @@ import (
 
 func TestFilter(t *testing.T) {
 	t.Run("When emitting a sequence of 10 elements", func(t *testing.T) {
-		sequence := GenerateIntSequence(10)
+		sequence := observe.GenerateIntSequence(0, 10)
 		ob := observe.Sequence(sequence)
 
 		t.Run("When filtering the sequence to emit only even numbers", func(t *testing.T) {
@@ -19,7 +19,7 @@ func TestFilter(t *testing.T) {
 
 			t.Run("Then the sequence should contain only even numbers", func(t *testing.T) {
 				actual := of.ToResult()
-				expected := convertToNotifications([]int{0, 2, 4, 6, 8})
+				expected := observe.ConvertToNotifications(0, 2, 4, 6, 8)
 				assert.Len(t, actual, 5)
 				assert.Equal(t, expected, actual)
 			})

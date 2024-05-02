@@ -20,7 +20,7 @@ func Sort[T any](comparer SorterFunc[T], opts ...observe.Option) OperatorFunc[T,
 
 				// Read the items into the buffer, in preparation for a sort.
 				for i := range upstream.Read() {
-					if i.HasValue() {
+					if !i.HasError() {
 						sorted = append(sorted, i)
 					} else {
 						unsorted = append(unsorted, i)

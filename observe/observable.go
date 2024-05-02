@@ -28,6 +28,24 @@ const (
 	Completed CompleteReason = "completed"
 )
 
+// Producer observes items produced by a callback function
+func Producer[T any](producer ProducerFunc[T], opts ...Option) *Observable[T] {
+	return newObservable[T](
+		func(streamWriter StreamWriter[T], opts options) {
+			producer(streamWriter)
+		},
+		opts...,
+	)
+}
+
+func Range(start, count int, opts ...Option) *Observable[int] {
+	return Producer[int](func(streamWriter StreamWriter[int]) {
+		for i := start; i < start+count; i++ {
+			streamWriter.Write(i)
+		}
+	}, opts...)
+}
+
 func Stream[T any](opts ...Option) (StreamWriter[T], *Observable[T]) {
 	source := newStream[T]()
 
@@ -49,16 +67,6 @@ func Sequence[T any](sequence []T, opts ...Option) *Observable[T] {
 			streamWriter.Write(item)
 		}
 	}, opts...)
-}
-
-// Producer observes items produced by a callback function
-func Producer[T any](producer ProducerFunc[T], opts ...Option) *Observable[T] {
-	return newObservable[T](
-		func(streamWriter StreamWriter[T], opts options) {
-			producer(streamWriter)
-		},
-		opts...,
-	)
 }
 
 // Operation observes items produce by an streams processing operation. This observable provides an operation callback that
@@ -129,7 +137,7 @@ func Operation[TIn any, TOut any](
 			// Wait until the concurrently executing operations have finished writing to the downstream
 			opWg.Wait()
 		},
-		source,
+		convertObservable(source),
 		opts...,
 	)
 
@@ -140,12 +148,46 @@ func newObservable[T any](upstreamCallback func(streamWriter StreamWriter[T], op
 	return newObservableWithParent[T](upstreamCallback, nil, options...)
 }
 
-func newObservableWithParent[T any](source func(streamWriter StreamWriter[T], options options), parent parentObservable, options ...Option) *Observable[T] {
+func applyOptions(opts *options, parents []parentObservable) {
+	ctxs := make([]context.Context, 0, len(parents))
+	// Certain settings need to be propagated from parent observable options to their child
+	// observable options
+	for _, p := range parents {
+		o := p.cloneOptions()
+		ctxs = append(ctxs, o.ctx)
+		if o.errorStrategy == ContinueOnError {
+			opts.errorStrategy = ContinueOnError
+		}
+	}
+}
+
+func combinedContexts(ctxs ...context.Context) context.Context {
+	combinedCtx, cancel := context.WithCancel(context.Background())
+
+	for _, ctx := range ctxs {
+		go func() {
+			<-ctx.Done()
+			cancel()
+		}()
+	}
+
+	return combinedCtx
+}
+
+func convertObservable[T any](obs ...*Observable[T]) []parentObservable {
+	parents := make([]parentObservable, 0, len(obs))
+	for _, o := range obs {
+		parents = append(parents, o)
+	}
+	return parents
+}
+
+func newObservableWithParent[T any](source func(streamWriter StreamWriter[T], options options), parents []parentObservable, options ...Option) *Observable[T] {
 	opts := newOptions()
 
 	// Propagate options down the observable chain
-	if parent != nil {
-		opts = parent.cloneOptions()
+	if len(parents) > 0 {
+		applyOptions(&opts, parents)
 	}
 
 	// Apply options to the current observable
@@ -158,7 +200,7 @@ func newObservableWithParent[T any](source func(streamWriter StreamWriter[T], op
 		opts:       opts,
 		source:     source,
 		downstream: newStream[T](),
-		parent:     parent,
+		parents:    parents,
 	}
 }
 
@@ -173,7 +215,7 @@ type Observable[T any] struct {
 	// source is a function that produces the upstream stream of items to be observed
 	source func(StreamWriter[T], options)
 	// parent is the observable that has produced the upstream downstream of items
-	parent parentObservable
+	parents []parentObservable
 	// downstream is the stream that will Send items to the observer
 	downstream *stream[T]
 	// connected is a flag that indicates whether the observable has begun observing items from the upstream
@@ -190,8 +232,10 @@ func (o *Observable[T]) Observe() {
 	}
 
 	// Propagate connect up the observable chain
-	if o.parent != nil {
-		o.parent.Observe()
+	if len(o.parents) > 0 {
+		for _, parent := range o.parents {
+			parent.Observe()
+		}
 	}
 
 	upstream := newStream[T](o.opts.buffer)
@@ -209,7 +253,7 @@ func (o *Observable[T]) Observe() {
 					return
 				}
 
-				if item.Err() != nil && o.opts.errorStrategy == StopOnError {
+				if item.Error() != nil && o.opts.errorStrategy == StopOnError {
 					o.downstream.Send(item)
 					return
 				}
@@ -257,6 +301,7 @@ func (o *Observable[T]) ToResult() []Notification[T] {
 	return notifications
 }
 
+// TODO: Support multiple subscriber callbacks, not just one.
 // Subscribe synchronously observes the observable and invokes its OnNext, OnError and OnComplete callbacks as items are
 // emitted from the upstream sequence. This function will block until the observable completes observing the upstream sequence.
 func (o *Observable[T]) Subscribe(onNext OnNextFunc[T], options ...SubscribeOption) {
@@ -278,8 +323,8 @@ func (o *Observable[T]) Subscribe(onNext OnNextFunc[T], options ...SubscribeOpti
 		var err error
 
 		for item := range o.downstream.Read() {
-			if item.Err() != nil {
-				err = item.Err()
+			if item.Error() != nil {
+				err = item.Error()
 				subscribeOptions.onError(err)
 				continue
 			}

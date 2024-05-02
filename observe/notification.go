@@ -13,7 +13,7 @@ const (
 type Notification[T any] interface {
 	Kind() NotificationKind
 	Value() T // returns the underlying value if it's a "Next" notification
-	Err() error
+	Error() error
 	HasError() bool
 	HasValue() bool
 }
@@ -35,7 +35,7 @@ func (d notification[T]) Value() T {
 	return d.v
 }
 
-func (d notification[T]) Err() error {
+func (d notification[T]) Error() error {
 	return d.err
 }
 

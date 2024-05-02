@@ -48,7 +48,7 @@ func batch[T any](batchSize int, flushTimeout *time.Duration, opts ...observe.Op
 						}
 
 						if item.Kind() == observe.ErrorKind {
-							downstream.Error(item.Err(), []T{item.Value()})
+							downstream.Error(item.Error(), []T{item.Value()})
 							continue
 						}
 

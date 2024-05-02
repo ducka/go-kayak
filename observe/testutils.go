@@ -1,0 +1,25 @@
+package observe
+
+func GenerateIntSequence(start, sequenceSize int) []int {
+	sequence := make([]int, 0, sequenceSize)
+	for i := start; i < sequenceSize+start; i++ {
+		sequence = append(sequence, i)
+	}
+	return sequence
+}
+
+func ConvertToNotifications[T any](sequence ...T) []Notification[T] {
+	notifications := make([]Notification[T], len(sequence))
+	for i, item := range sequence {
+		notifications[i] = Next(item)
+	}
+	return notifications
+}
+
+func ConvertToValues[T any](notifications ...Notification[T]) []T {
+	values := make([]T, 0, len(notifications))
+	for _, n := range notifications {
+		values = append(values, n.Value())
+	}
+	return values
+}

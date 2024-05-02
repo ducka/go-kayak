@@ -15,10 +15,8 @@ func TestDemo(t *testing.T) {
 	1) Implement Merge and Fork
 	*/
 
-	sequence := operator.GenerateIntSequence(100)
-
 	ob := operator.Pipe5(
-		observe.Sequence[int](sequence),
+		observe.Range(0, 100),
 		operator.Filter[int](func(item int) bool {
 			// only emit even numbers
 			return item%2 == 0
@@ -35,6 +33,8 @@ func TestDemo(t *testing.T) {
 		// should emit 2 batches concurrently
 		operator.Batch[string](5, observe.WithPool(2)),
 	)
+
+	//forks := observe.Fork(ob, 2)
 
 	ob.Subscribe(func(item []string) {
 		fmt.Println(item)

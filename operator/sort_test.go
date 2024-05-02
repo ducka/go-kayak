@@ -31,9 +31,9 @@ func TestSort(t *testing.T) {
 					[]observe.Notification[int]{
 						observe.Next(1),
 						observe.Next(2),
-						observe.Error(errors.New("error with value"), 3),
 						observe.Next(4),
 						observe.Next(5),
+						observe.Error(errors.New("error with value"), 3),
 						observe.Error[int](errors.New("error without value")),
 					},
 					actual,

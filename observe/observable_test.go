@@ -203,9 +203,7 @@ func TestObservable(t *testing.T) {
 		wg := &sync.WaitGroup{}
 		wg.Add(poolSize)
 
-		ob := Producer[int](
-			produceNumbers(15),
-		)
+		ob := Sequence(GenerateIntSequence(0, 15))
 
 		activeProducers := 0
 
@@ -272,7 +270,7 @@ func TestObservable(t *testing.T) {
 
 	t.Run("When observing a stream", func(t *testing.T) {
 		sw, obs := Stream[int]()
-		sequence := generateIntSequence(20)
+		sequence := GenerateIntSequence(0, 20)
 
 		t.Run("When sending a sequence of integers on the stream", func(t *testing.T) {
 			go func() {
@@ -285,7 +283,7 @@ func TestObservable(t *testing.T) {
 
 			t.Run("Then the sequence of integers should be emitted", func(t *testing.T) {
 				actual := obs.ToResult()
-				expected := convertToNotifications(sequence)
+				expected := ConvertToNotifications(sequence...)
 				assert.Equal(t, expected, actual)
 			})
 		})
@@ -347,7 +345,7 @@ func assertSequence[T any](t *testing.T, expected []any, actual []Notification[T
 	actualValues := make([]any, 0, len(actual))
 	for _, n := range actual {
 		if n.Kind() == ErrorKind {
-			actualValues = append(actualValues, n.Err())
+			actualValues = append(actualValues, n.Error())
 			continue
 		}
 		actualValues = append(actualValues, n.Value())
@@ -370,20 +368,4 @@ func (s *SubscriberMock[T]) OnError(err error) {
 
 func (s *SubscriberMock[T]) OnComplete(reason CompleteReason, err error) {
 	s.Called(reason, err)
-}
-
-func generateIntSequence(sequenceSize int) []int {
-	sequence := make([]int, sequenceSize)
-	for i := 0; i < sequenceSize; i++ {
-		sequence[i] = i
-	}
-	return sequence
-}
-
-func convertToNotifications[T any](sequence []T) []Notification[T] {
-	notifications := make([]Notification[T], len(sequence))
-	for i, item := range sequence {
-		notifications[i] = Next(item)
-	}
-	return notifications
 }
