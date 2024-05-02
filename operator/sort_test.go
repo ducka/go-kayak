@@ -13,9 +13,9 @@ func TestSort(t *testing.T) {
 		ob := observe.Producer(func(downstream observe.StreamWriter[int]) {
 			downstream.Write(4)
 			downstream.Write(2)
-			downstream.Error(errors.New("error with value"), 3)
+			downstream.Error(errors.New("error1"))
 			downstream.Write(5)
-			downstream.Error(errors.New("error without value"))
+			downstream.Error(errors.New("error2"))
 			downstream.Write(1)
 		}, observe.WithErrorStrategy(observe.ContinueOnError))
 
@@ -33,8 +33,8 @@ func TestSort(t *testing.T) {
 						observe.Next(2),
 						observe.Next(4),
 						observe.Next(5),
-						observe.Error(errors.New("error with value"), 3),
-						observe.Error[int](errors.New("error without value")),
+						observe.Error[int](errors.New("error1")),
+						observe.Error[int](errors.New("error2")),
 					},
 					actual,
 				)

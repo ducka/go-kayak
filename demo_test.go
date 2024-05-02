@@ -34,7 +34,24 @@ func TestDemo(t *testing.T) {
 		operator.Batch[string](5, observe.WithPool(2)),
 	)
 
-	//forks := observe.Fork(ob, 2)
+	//forks := observe.Fork[string](ob, 2)
+	//
+	//pipe1 := operator.Pipe(
+	//	forks[0],
+	//	operator.Map(func(item string, index int) (string, error) {
+	//		fmt.Println("fork1: ", item)
+	//		return item, nil
+	//	}),
+	//)
+
+	forks := observe.Fork(ob, 2)
+
+	pipe1 := operator.Pipe1(
+		forks[0],
+		operator.Passthrough[[]string](),
+	)
+
+	fmt.Println(forks)
 
 	ob.Subscribe(func(item []string) {
 		fmt.Println(item)

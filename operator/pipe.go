@@ -8,21 +8,6 @@ type (
 	OperatorFunc[I any, O any] func(source *observe.Observable[I]) *observe.Observable[O]
 )
 
-// If there is a commonly used sequence of operators in your code, use the `Pipe` function to
-// extract the sequence into a new operator. Even if a sequence is not that common, breaking
-// it out into a single operator can improve readability.
-func Pipe[S any, O1 any](
-	stream *observe.Observable[S],
-	f1 OperatorFunc[S, any],
-	f ...OperatorFunc[any, any],
-) *observe.Observable[any] {
-	result := f1(stream)
-	for _, cb := range f {
-		result = cb(result)
-	}
-	return result
-}
-
 func Pipe1[S any, O1 any](
 	stream *observe.Observable[S],
 	f1 OperatorFunc[S, O1],
