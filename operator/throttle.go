@@ -11,11 +11,11 @@ func Throttle[T any](flowRate int64, perDuration time.Duration, opts ...observe.
 	if flowRate < 1 {
 		flowRate = 1
 	}
-
+	opts = defaultActivityName("Throttle", opts)
 	return func(source *observe.Observable[T]) *observe.Observable[T] {
 		return observe.Operation[T, T](
 			source,
-			func(upstream observe.StreamReader[T], downstream observe.StreamWriter[T]) {
+			func(ctx observe.Context, upstream observe.StreamReader[T], downstream observe.StreamWriter[T]) {
 				for i := range upstream.Read() {
 					downstream.Send(i)
 					time.Sleep(time.Duration(int64(perDuration) / flowRate))

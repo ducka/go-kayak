@@ -15,7 +15,7 @@ func TestDemo(t *testing.T) {
 	1) Implement Merge and Fork
 	*/
 
-	ob := operator.Pipe5(
+	ob := operator.Pipe7(
 		observe.Range(0, 100),
 		operator.Filter[int](func(item int) bool {
 			// only emit even numbers
@@ -32,28 +32,25 @@ func TestDemo(t *testing.T) {
 		operator.Throttle[string](1, 100*time.Millisecond),
 		// should emit 2 batches concurrently
 		operator.Batch[string](5, observe.WithPool(2)),
+		operator.Print[[]string]("batches:"),
+		operator.Flatten[string](),
 	)
 
-	//forks := observe.Fork[string](ob, 2)
-	//
-	//pipe1 := operator.Pipe(
-	//	forks[0],
-	//	operator.Map(func(item string, index int) (string, error) {
-	//		fmt.Println("fork1: ", item)
-	//		return item, nil
-	//	}),
-	//)
-
-	forks := observe.Fork(ob, 2)
+	forked := observe.Fork(ob, 2)
 
 	pipe1 := operator.Pipe1(
-		forks[0],
-		operator.Passthrough[[]string](),
+		forked[0],
+		operator.Print[string]("fork1:"),
 	)
 
-	fmt.Println(forks)
+	pipe2 := operator.Pipe1(
+		forked[1],
+		operator.Print[string]("fork2:"),
+	)
 
-	ob.Subscribe(func(item []string) {
-		fmt.Println(item)
+	merged := observe.Merge(pipe1, pipe2)
+
+	merged.Subscribe(func(item string) {
+		//fmt.Println(item)
 	})
 }

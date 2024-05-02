@@ -11,10 +11,11 @@ type (
 )
 
 func Sort[T any](comparer SorterFunc[T], opts ...observe.Option) OperatorFunc[T, T] {
+	opts = defaultActivityName("Sort", opts)
 	return func(source *observe.Observable[T]) *observe.Observable[T] {
 		return observe.Operation[T, T](
 			source,
-			func(upstream observe.StreamReader[T], downstream observe.StreamWriter[T]) {
+			func(ctx observe.Context, upstream observe.StreamReader[T], downstream observe.StreamWriter[T]) {
 				sorted := make([]observe.Notification[T], 0)
 				unsorted := make([]observe.Notification[T], 0)
 

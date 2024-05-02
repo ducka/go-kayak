@@ -9,12 +9,14 @@ import (
 
 // Batch batches up items from the observable into slices of the specified size.
 func Batch[T any](batchSize int, opts ...observe.Option) OperatorFunc[T, []T] {
+	opts = defaultActivityName("Batch", opts)
 	return batch[T](batchSize, nil, opts...)
 }
 
 // BatchWithTimeout batches up items from the observable into slices of the specified size. The flushTimeout ensures that
 // items will be batched up and emitted after the specified duration has elapsed, regardless of whether the batch is complete.
 func BatchWithTimeout[T any](batchSize int, flushTimeout time.Duration, opts ...observe.Option) OperatorFunc[T, []T] {
+	opts = defaultActivityName("BatchWithTimeout", opts)
 	return batch[T](batchSize, &flushTimeout, opts...)
 }
 
@@ -30,7 +32,7 @@ func batch[T any](batchSize int, flushTimeout *time.Duration, opts ...observe.Op
 	return func(source *observe.Observable[T]) *observe.Observable[[]T] {
 		return observe.Operation[T, []T](
 			source,
-			func(upstream observe.StreamReader[T], downstream observe.StreamWriter[[]T]) {
+			func(ctx observe.Context, upstream observe.StreamReader[T], downstream observe.StreamWriter[[]T]) {
 				batch := make([]T, 0, batchSize)
 				exit := false
 

@@ -1,17 +1,20 @@
 package operator
 
 import (
+	"fmt"
+
 	"github.com/ducka/go-kayak/observe"
 )
 
-// Passthrough is an operator that passes all items through without modification.
-func Passthrough[T any](opts ...observe.Option) OperatorFunc[T, T] {
-	opts = defaultActivityName("Passthrough", opts)
+// Print logs the emitted item out via console
+func Print[T any](label string, opts ...observe.Option) OperatorFunc[T, T] {
+	opts = defaultActivityName("Print", opts)
 	return func(source *observe.Observable[T]) *observe.Observable[T] {
 		return observe.Operation[T, T](
 			source,
 			func(ctx observe.Context, upstream observe.StreamReader[T], downstream observe.StreamWriter[T]) {
 				for i := range upstream.Read() {
+					fmt.Println(label, i)
 					downstream.Send(i)
 				}
 			},

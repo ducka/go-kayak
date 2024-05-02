@@ -9,16 +9,17 @@ type (
 )
 
 // Map transforms the items emitted by an Observable by applying a function to each item.
-func Map[TIn any, TOut any](mapper MapFunc[TIn, TOut], options ...observe.Option) OperatorFunc[TIn, TOut] {
+func Map[TIn any, TOut any](mapper MapFunc[TIn, TOut], opts ...observe.Option) OperatorFunc[TIn, TOut] {
 	if mapper == nil {
 		panic(`"Map" expected mapper func`)
 	}
+	opts = defaultActivityName("Map", opts)
 	return func(source *observe.Observable[TIn]) *observe.Observable[TOut] {
 		var index int
 
 		return observe.Operation[TIn, TOut](
 			source,
-			func(upstream observe.StreamReader[TIn], downstream observe.StreamWriter[TOut]) {
+			func(ctx observe.Context, upstream observe.StreamReader[TIn], downstream observe.StreamWriter[TOut]) {
 				for item := range upstream.Read() {
 					switch item.Kind() {
 					case observe.NextKind:
@@ -36,7 +37,7 @@ func Map[TIn any, TOut any](mapper MapFunc[TIn, TOut], options ...observe.Option
 					}
 				}
 			},
-			options...,
+			opts...,
 		)
 	}
 }

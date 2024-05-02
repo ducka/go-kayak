@@ -10,12 +10,17 @@ type (
 	OnCompleteFunc                   func(reason CompleteReason, err error)
 	OnNextFunc[T any]                func(v T)
 	ProducerFunc[T any]              func(streamWriter StreamWriter[T])
-	OperationFunc[TIn any, TOut any] func(StreamReader[TIn], StreamWriter[TOut])
+	OperationFunc[TIn any, TOut any] func(Context, StreamReader[TIn], StreamWriter[TOut])
 
 	ErrorStrategy        string
 	BackpressureStrategy string
 	CompleteReason       string
 )
+
+type Context struct {
+	context.Context
+	Activity string
+}
 
 const (
 	ContinueOnError ErrorStrategy = "continue"
@@ -83,9 +88,12 @@ func Operation[TIn any, TOut any](
 			poolWg := &sync.WaitGroup{}
 			upstream := source.ToStream()
 			usePool := opts.poolSize > 1
+			ctx := Context{
+				Context: opts.ctx,
+			}
 
 			if !usePool {
-				operation(upstream, downstream)
+				operation(ctx, upstream, downstream)
 				return
 			}
 
@@ -100,7 +108,7 @@ func Operation[TIn any, TOut any](
 				opWg.Add(1)
 				go func(poolStream StreamReader[TIn], downstream StreamWriter[TOut]) {
 					defer opWg.Done()
-					operation(poolStream, downstream)
+					operation(ctx, poolStream, downstream)
 				}(poolStream, downstream)
 			}
 
