@@ -48,7 +48,7 @@ func Producer[T any](producer ProducerFunc[T], opts ...Option) *Observable[T] {
 	)
 }
 
-func Cron(cronPattern string) (*Observable[time.Time], StopFunc) {
+func Cron(cronPattern string, opts ...Option) (*Observable[time.Time], StopFunc) {
 	parser := cron.NewParser(
 		cron.SecondOptional | cron.Minute | cron.Hour | cron.Dom | cron.Month | cron.Dow | cron.Descriptor,
 	)
@@ -63,39 +63,45 @@ func Cron(cronPattern string) (*Observable[time.Time], StopFunc) {
 		close(stopCh)
 	}
 
-	return Producer[time.Time](func(streamWriter StreamWriter[time.Time]) {
+	return Producer[time.Time](
+		func(streamWriter StreamWriter[time.Time]) {
 
-		for {
-			next := schedule.Next(time.Now())
-			select {
-			case <-time.After(time.Until(next)):
-				streamWriter.Write(next)
-			case <-stopCh:
-				return
+			for {
+				next := schedule.Next(time.Now())
+				select {
+				case <-time.After(time.Until(next)):
+					streamWriter.Write(next)
+				case <-stopCh:
+					return
+				}
 			}
-		}
-	}), stopper
+		},
+		opts...,
+	), stopper
 }
 
 // Timer is an observable that emits items on a specified interval
-func Timer(interval time.Duration) (*Observable[time.Time], StopFunc) {
+func Timer(interval time.Duration, opts ...Option) (*Observable[time.Time], StopFunc) {
 	ticker := time.NewTicker(interval)
 	done := make(chan interface{})
 	stopper := func() {
 		defer close(done)
 		ticker.Stop()
 	}
-	return Producer[time.Time](func(streamWriter StreamWriter[time.Time]) {
-		defer ticker.Stop()
-		for {
-			select {
-			case <-done:
-				return
-			case t := <-ticker.C:
-				streamWriter.Write(t)
+	return Producer[time.Time](
+		func(streamWriter StreamWriter[time.Time]) {
+			defer ticker.Stop()
+			for {
+				select {
+				case <-done:
+					return
+				case t := <-ticker.C:
+					streamWriter.Write(t)
+				}
 			}
-		}
-	}), stopper
+		},
+		opts...,
+	), stopper
 }
 
 func Range(start, count int, opts ...Option) *Observable[int] {
@@ -232,7 +238,6 @@ func combinedContexts(ctxs ...context.Context) context.Context {
 	for _, ctx := range ctxs {
 		go func(ctx context.Context) {
 			defer cancel()
-
 			<-ctx.Done()
 		}(ctx)
 	}

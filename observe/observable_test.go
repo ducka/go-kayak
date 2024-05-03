@@ -109,6 +109,29 @@ func TestObservable(t *testing.T) {
 		})
 	})
 
+	t.Run("When merging multiple observers of time", func(t *testing.T) {
+		assertWithinTime(t, 200*time.Millisecond, func() {
+			ctx, cancel := context.WithCancel(context.Background())
+			ob1, _ := Timer(100 * time.Millisecond)
+			ob2, _ := Timer(100*time.Millisecond, WithContext(ctx))
+
+			merged := Merge(ob1, ob2)
+
+			t.Run("And cancelling the observation half way through, the observation should terminate", func(t *testing.T) {
+				merged.Subscribe(func(item time.Time) {
+					cancel()
+				},
+					WithOnComplete(
+						func(reason CompleteReason, err error) {
+							assert.Equal(t, reason, Failed)
+							assert.Equal(t, err, context.Canceled)
+						},
+					))
+			})
+
+		})
+	})
+
 	t.Run("When an observable uses a StopOnError", func(t *testing.T) {
 		expected := []any{1, errors.New("error"), 2}
 		sut := Producer[int](produceSequence(expected...), WithErrorStrategy(StopOnError))
