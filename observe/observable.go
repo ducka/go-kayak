@@ -222,16 +222,19 @@ func applyOptions(opts *options, parents []parentObservable) {
 			opts.errorStrategy = ContinueOnError
 		}
 	}
+
+	opts.ctx = combinedContexts(ctxs...)
 }
 
 func combinedContexts(ctxs ...context.Context) context.Context {
 	combinedCtx, cancel := context.WithCancel(context.Background())
 
 	for _, ctx := range ctxs {
-		go func() {
+		go func(ctx context.Context) {
+			defer cancel()
+
 			<-ctx.Done()
-			cancel()
-		}()
+		}(ctx)
 	}
 
 	return combinedCtx
@@ -282,7 +285,8 @@ type Observable[T any] struct {
 	// downstream is the stream that will Send items to the observer
 	downstream *stream[T]
 	// connected is a flag that indicates whether the observable has begun observing items from the upstream
-	connected bool
+	connected         bool
+	onNextSubscribers []OnNextFunc[T]
 }
 
 // Observe starts the observation of the upstream stream

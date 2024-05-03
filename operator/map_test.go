@@ -51,7 +51,7 @@ func TestMap(t *testing.T) {
 				assert.EqualValues(t,
 					[]observe.Notification[string]{
 						observe.Next("1"),
-						observe.Error(err, "2"),
+						observe.Error[string](err),
 						observe.Next("3"),
 					},
 					m.ToResult(),

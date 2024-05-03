@@ -70,7 +70,7 @@ func TestObservable(t *testing.T) {
 				assert.Equal(t,
 					[]Notification[int]{
 						Next(1),
-						Error(err, 2),
+						Error[int](err),
 						Next(3),
 					},
 					actual,
@@ -322,7 +322,6 @@ func TestObservable(t *testing.T) {
 			})
 
 		})
-
 	})
 }
 
