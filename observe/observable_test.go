@@ -26,6 +26,8 @@ func TestObservable(t *testing.T) {
 				WithOnComplete(subscriberMock.OnComplete),
 			)
 
+			subscriberMock.WaitTillComplete(time.Second)
+
 			subscriberMock.AssertExpectations(t)
 		})
 	})
@@ -44,6 +46,8 @@ func TestObservable(t *testing.T) {
 				WithOnError(subscriberMock.OnError),
 				WithOnComplete(subscriberMock.OnComplete),
 			)
+
+			subscriberMock.WaitTillComplete(time.Second)
 
 			subscriberMock.AssertExpectations(t)
 		})
@@ -186,11 +190,17 @@ func TestObservable(t *testing.T) {
 
 		t.Run("and backpressure is experienced in the pipeline", func(t *testing.T) {
 			items := make([]int, 0, sequenceLength)
-
+			wg := &sync.WaitGroup{}
+			wg.Add(1)
 			sut.Subscribe(func(item int) {
 				items = append(items, item)
 				time.Sleep(1 * time.Millisecond)
-			})
+			},
+				WithOnComplete(func(reason CompleteReason, err error) {
+					wg.Done()
+				}))
+
+			wg.Wait()
 
 			t.Run("Then all items should be emitted in the sequence", func(t *testing.T) {
 				assert.Len(t, items, sequenceLength)
@@ -208,11 +218,18 @@ func TestObservable(t *testing.T) {
 
 		t.Run("and backpressure is experienced in the pipeline", func(t *testing.T) {
 			items := make([]int, 0, sequenceLength)
+			wg := &sync.WaitGroup{}
+			wg.Add(1)
 
 			sut.Subscribe(func(item int) {
 				items = append(items, item)
 				time.Sleep(1 * time.Millisecond)
-			})
+			},
+				WithOnComplete(func(reason CompleteReason, err error) {
+					wg.Done()
+				}))
+
+			wg.Wait()
 
 			t.Run("Then all items should be emitted in the sequence", func(t *testing.T) {
 				assert.Len(t, items, sequenceLength)
@@ -278,7 +295,7 @@ func TestObservable(t *testing.T) {
 
 		// Execute observe, but don't read the sequence. This will trigger the buffer
 		// filling up, but it won't drain the observable
-		ob.Observe()
+		ob.Connect()
 
 		// Sleep to give the go routines internal to the Observer time to execute
 		time.Sleep(100 * time.Millisecond)
@@ -346,10 +363,66 @@ func TestObservable(t *testing.T) {
 
 		})
 	})
+
+	t.Run("When observing a sequence of integers with a publish strategy of Immediately", func(t *testing.T) {
+		expected := GenerateIntSequence(0, 10)
+		ob := Sequence(expected, WithPublishStrategy(Immediately))
+
+		t.Run("Then the observer should emit the sequence immediately when subscribed to", func(t *testing.T) {
+			wg := &sync.WaitGroup{}
+			wg.Add(1)
+			actual := make([]int, 0)
+
+			ob.Subscribe(func(item int) {
+				actual = append(actual, item)
+			}, WithOnComplete(func(reason CompleteReason, err error) {
+				wg.Done()
+			}))
+
+			assertWithinTime(t, 100*time.Millisecond, func() {
+				wg.Wait()
+
+				assert.Equal(t, expected, actual)
+			})
+		})
+	})
+
+	t.Run("When observing a sequence of integers with a publish strategy of OnConnect", func(t *testing.T) {
+		expected := GenerateIntSequence(0, 10)
+		ob := Sequence(expected, WithPublishStrategy(OnConnect))
+
+		t.Run("Then the observer should not emit the sequence immediately when subscribed to", func(t *testing.T) {
+			wg := &sync.WaitGroup{}
+			wg.Add(1)
+			actual := make([]int, 0)
+
+			ob.Subscribe(func(item int) {
+				actual = append(actual, item)
+			}, WithOnComplete(func(reason CompleteReason, err error) {
+				wg.Done()
+			}))
+
+			time.Sleep(100 * time.Millisecond)
+
+			assert.Len(t, actual, 0)
+
+			t.Run("Then when the observer is connected, the sequence should be emitted", func(t *testing.T) {
+				ob.Connect()
+
+				assertWithinTime(t, 100*time.Millisecond, func() {
+					wg.Wait()
+
+					assert.Equal(t, expected, actual)
+				})
+			})
+		})
+	})
 }
 
 func makeSubscriber(strategy ErrorStrategy, sequence ...any) *SubscriberMock[int] {
-	subscriber := &SubscriberMock[int]{}
+	subscriber := &SubscriberMock[int]{
+		done: make(chan struct{}),
+	}
 	calls := make([]*mock.Call, 0, len(sequence))
 	var err error
 
@@ -414,6 +487,7 @@ func assertSequence[T any](t *testing.T, expected []any, actual []Notification[T
 
 type SubscriberMock[T any] struct {
 	mock.Mock
+	done chan struct{}
 }
 
 func (s *SubscriberMock[T]) OnNext(next T) {
@@ -425,5 +499,13 @@ func (s *SubscriberMock[T]) OnError(err error) {
 }
 
 func (s *SubscriberMock[T]) OnComplete(reason CompleteReason, err error) {
+	defer close(s.done)
 	s.Called(reason, err)
+}
+
+func (s *SubscriberMock[T]) WaitTillComplete(timeout time.Duration) {
+	select {
+	case <-s.done:
+	case <-time.After(timeout):
+	}
 }

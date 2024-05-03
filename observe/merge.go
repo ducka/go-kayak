@@ -49,7 +49,7 @@ func merge[T any](
 
 			for _, o := range observables {
 				go f(o)
-				o.Observe()
+				o.Connect()
 			}
 
 			startWg.Done()

@@ -20,6 +20,7 @@ type (
 	ErrorStrategy        string
 	BackpressureStrategy string
 	CompleteReason       string
+	PublishStrategy      string
 )
 
 type Context struct {
@@ -36,6 +37,11 @@ const (
 
 	Failed    CompleteReason = "failure"
 	Completed CompleteReason = "completed"
+
+	// Immediately instructs the observable to start observing as soon as the observable is instantiated
+	Immediately PublishStrategy = "immediate"
+	// OnConnect instructs the observable to start observing items when the Connect function is called
+	OnConnect PublishStrategy = "connect"
 )
 
 // Producer observes items produced by a callback function
@@ -219,13 +225,19 @@ func newObservable[T any](upstreamCallback func(streamWriter StreamWriter[T], op
 
 func applyOptions(opts *options, parents []parentObservable) {
 	ctxs := make([]context.Context, 0, len(parents))
+	defaults := newOptions()
 	// Certain settings need to be propagated from parent observable options to their child
 	// observable options
 	for _, p := range parents {
 		o := p.cloneOptions()
 		ctxs = append(ctxs, o.ctx)
-		if o.errorStrategy == ContinueOnError {
-			opts.errorStrategy = ContinueOnError
+
+		// Only set the following options if they deviate away from the defaults
+		if o.errorStrategy != defaults.errorStrategy {
+			opts.errorStrategy = o.errorStrategy
+		}
+		if o.publishStrategy == defaults.publishStrategy {
+			opts.publishStrategy = o.publishStrategy
 		}
 	}
 
@@ -266,18 +278,89 @@ func newObservableWithParent[T any](source func(streamWriter StreamWriter[T], op
 		opt(&opts)
 	}
 
-	return &Observable[T]{
+	obs := &Observable[T]{
 		mu:         new(sync.Mutex),
 		opts:       opts,
 		source:     source,
 		downstream: newStream[T](),
 		parents:    parents,
+		subs:       newSubscribers[T](),
 	}
+
+	if opts.publishStrategy == Immediately {
+		obs.Connect()
+	}
+
+	return obs
 }
 
 type parentObservable interface {
-	Observe()
+	Connect()
 	cloneOptions() options
+}
+
+type subscriber[T any] struct {
+	next     OnNextFunc[T]
+	complete OnCompleteFunc
+	err      OnErrorFunc
+}
+
+type subscribers[T any] struct {
+	mu *sync.RWMutex
+	s  []subscriber[T]
+}
+
+func newSubscribers[T any]() *subscribers[T] {
+	return &subscribers[T]{
+		mu: new(sync.RWMutex),
+		s:  make([]subscriber[T], 0),
+	}
+}
+
+func (s *subscribers[T]) len() int {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	return len(s.s)
+}
+
+func (s *subscribers[T]) hasSubscribers() bool {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	return len(s.s) > 0
+}
+
+func (s *subscribers[T]) add(onNext OnNextFunc[T], errorFunc OnErrorFunc, completeFunc OnCompleteFunc) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.s = append(s.s, subscriber[T]{
+		next:     onNext,
+		err:      errorFunc,
+		complete: completeFunc,
+	})
+}
+
+func (s *subscribers[T]) dispatchNext(v T) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	for _, sub := range s.s {
+		sub.next(v)
+	}
+}
+
+func (s *subscribers[T]) dispatchError(err error) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	for _, sub := range s.s {
+		sub.err(err)
+	}
+}
+
+func (s *subscribers[T]) dispatchComplete(reason CompleteReason, err error) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	for _, sub := range s.s {
+		sub.complete(reason, err)
+	}
 }
 
 type Observable[T any] struct {
@@ -290,12 +373,12 @@ type Observable[T any] struct {
 	// downstream is the stream that will Send items to the observer
 	downstream *stream[T]
 	// connected is a flag that indicates whether the observable has begun observing items from the upstream
-	connected         bool
-	onNextSubscribers []OnNextFunc[T]
+	connected bool
+	subs      *subscribers[T]
 }
 
 // Observe starts the observation of the upstream stream
-func (o *Observable[T]) Observe() {
+func (o *Observable[T]) Connect() {
 	o.mu.Lock()
 	defer o.mu.Unlock()
 
@@ -306,7 +389,7 @@ func (o *Observable[T]) Observe() {
 	// Propagate connect up the observable chain
 	if len(o.parents) > 0 {
 		for _, parent := range o.parents {
-			parent.Observe()
+			parent.Connect()
 		}
 	}
 
@@ -366,14 +449,13 @@ func (o *Observable[T]) ToResult() []Notification[T] {
 		wg.Done()
 	}()
 
-	o.Observe()
+	o.Connect()
 
 	wg.Wait()
 
 	return notifications
 }
 
-// TODO: Support multiple subscriber callbacks, not just one.
 // Subscribe synchronously observes the observable and invokes its OnNext, OnError and OnComplete callbacks as items are
 // emitted from the upstream sequence. This function will block until the observable completes observing the upstream sequence.
 func (o *Observable[T]) Subscribe(onNext OnNextFunc[T], options ...SubscribeOption) {
@@ -386,36 +468,31 @@ func (o *Observable[T]) Subscribe(onNext OnNextFunc[T], options ...SubscribeOpti
 		opt(subscribeOptions)
 	}
 
-	wg := &sync.WaitGroup{}
-	wg.Add(1)
+	o.subs.add(onNext, subscribeOptions.onError, subscribeOptions.onComplete)
 
-	go func() {
-		defer wg.Done()
+	// start listening to the upstream for emitted items as soon as the first subscriber is registered
+	if o.subs.len() == 1 {
+		go func() {
+			var err error
 
-		var err error
+			for item := range o.downstream.Read() {
+				if item.Error() != nil {
+					err = item.Error()
+					o.subs.dispatchError(err)
+					continue
+				}
 
-		for item := range o.downstream.Read() {
-			if item.Error() != nil {
-				err = item.Error()
-				subscribeOptions.onError(err)
-				continue
+				o.subs.dispatchNext(item.Value())
 			}
 
-			onNext(item.Value())
-		}
+			reason := Completed
+			if err != nil {
+				reason = Failed
+			}
 
-		reason := Completed
-		if err != nil {
-			reason = Failed
-		}
-
-		subscribeOptions.onComplete(reason, err)
-	}()
-
-	// Trigger the observation process of the upstream sequence
-	o.Observe()
-
-	wg.Wait()
+			o.subs.dispatchComplete(reason, err)
+		}()
+	}
 }
 
 func (o *Observable[T]) getContext() context.Context {
@@ -428,7 +505,8 @@ func (o *Observable[T]) setErrorStrategy(strategy ErrorStrategy) {
 
 func (o *Observable[T]) cloneOptions() options {
 	return options{
-		ctx:           o.opts.ctx,
-		errorStrategy: o.opts.errorStrategy,
+		ctx:             o.opts.ctx,
+		errorStrategy:   o.opts.errorStrategy,
+		publishStrategy: o.opts.publishStrategy,
 	}
 }

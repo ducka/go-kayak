@@ -2,6 +2,7 @@ package go_kayak
 
 import (
 	"fmt"
+	"sync"
 	"testing"
 	"time"
 
@@ -14,6 +15,9 @@ func TestDemo(t *testing.T) {
 	/* TODOs
 	1) Implement Merge and Fork
 	*/
+
+	wg := &sync.WaitGroup{}
+	wg.Add(1)
 
 	ob := operator.Pipe7(
 		observe.Range(0, 100, observe.WithActivityName("Observing kafka")),
@@ -51,6 +55,11 @@ func TestDemo(t *testing.T) {
 	merged := observe.Merge(pipe1, pipe2)
 
 	merged.Subscribe(func(item string) {
-		//fmt.Println(item)
-	})
+		fmt.Println(item)
+	},
+		observe.WithOnComplete(func(reason observe.CompleteReason, err error) {
+			wg.Done()
+		}))
+
+	wg.Wait()
 }

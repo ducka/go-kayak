@@ -12,6 +12,7 @@ type options struct {
 	errorStrategy        ErrorStrategy
 	poolSize             int
 	buffer               uint64
+	publishStrategy      PublishStrategy
 }
 
 func newOptions() options {
@@ -20,16 +21,18 @@ func newOptions() options {
 		backpressureStrategy: Block,
 		errorStrategy:        StopOnError,
 		buffer:               0,
-	}
-}
-
-func (o options) Clone() options {
-	return options{
-		ctx: o.ctx,
+		publishStrategy:      Immediately,
 	}
 }
 
 type Option func(options *options)
+
+// WithPublishStrategy instructs the observable when to start observing items
+func WithPublishStrategy(strategy PublishStrategy) Option {
+	return func(options *options) {
+		options.publishStrategy = strategy
+	}
+}
 
 func WithContext(ctx context.Context) Option {
 	return func(options *options) {
@@ -79,8 +82,9 @@ func WithPool(poolSize int) Option {
 }
 
 type subscribeOptions struct {
-	onError    OnErrorFunc
-	onComplete OnCompleteFunc
+	onError          OnErrorFunc
+	onComplete       OnCompleteFunc
+	waitTillFinished bool
 }
 
 type SubscribeOption func(options *subscribeOptions)

@@ -27,7 +27,7 @@ func Fork[T any](source *Observable[T], count int, opts ...Option) []*Observable
 	}()
 
 	// Start the observation of the upstream observable.
-	source.Observe()
+	source.Connect()
 
 	return observables
 }
