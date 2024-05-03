@@ -2,8 +2,11 @@ package observe
 
 import (
 	"context"
+	"fmt"
 	"sync"
 	"time"
+
+	"github.com/robfig/cron/v3"
 )
 
 type (
@@ -12,7 +15,7 @@ type (
 	OnNextFunc[T any]                func(v T)
 	ProducerFunc[T any]              func(streamWriter StreamWriter[T])
 	OperationFunc[TIn any, TOut any] func(Context, StreamReader[TIn], StreamWriter[TOut])
-	TimerStopFunc                    func()
+	StopFunc                         func()
 
 	ErrorStrategy        string
 	BackpressureStrategy string
@@ -45,8 +48,37 @@ func Producer[T any](producer ProducerFunc[T], opts ...Option) *Observable[T] {
 	)
 }
 
+func Cron(cronPattern string) (*Observable[time.Time], StopFunc) {
+	parser := cron.NewParser(
+		cron.SecondOptional | cron.Minute | cron.Hour | cron.Dom | cron.Month | cron.Dow | cron.Descriptor,
+	)
+
+	schedule, err := parser.Parse(cronPattern)
+	if err != nil {
+		panic(fmt.Errorf("failed to parse cron pattern: %v", err))
+	}
+
+	stopCh := make(chan struct{})
+	stopper := func() {
+		close(stopCh)
+	}
+
+	return Producer[time.Time](func(streamWriter StreamWriter[time.Time]) {
+
+		for {
+			next := schedule.Next(time.Now())
+			select {
+			case <-time.After(time.Until(next)):
+				streamWriter.Write(next)
+			case <-stopCh:
+				return
+			}
+		}
+	}), stopper
+}
+
 // Timer is an observable that emits items on a specified interval
-func Timer(interval time.Duration) (*Observable[time.Time], TimerStopFunc) {
+func Timer(interval time.Duration) (*Observable[time.Time], StopFunc) {
 	ticker := time.NewTicker(interval)
 	done := make(chan interface{})
 	stopper := func() {

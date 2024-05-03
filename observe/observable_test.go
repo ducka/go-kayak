@@ -298,12 +298,31 @@ func TestObservable(t *testing.T) {
 			})
 
 			t.Run("Then the timer should emit 5 items", func(t *testing.T) {
-				//assertWithinTime(t, 600*time.Millisecond, func() {
-				actual := obs.ToResult()
-				assert.Len(t, actual, 5)
-				//})
+				assertWithinTime(t, 600*time.Millisecond, func() {
+					actual := obs.ToResult()
+					assert.Len(t, actual, 5)
+				})
 			})
 		})
+	})
+
+	t.Run("When observing a cron schedule that fires every 1 second", func(t *testing.T) {
+		obs, stop := Cron("* * * * * *")
+
+		t.Run("And we stop the timer after 4 seconds", func(t *testing.T) {
+			time.AfterFunc(4*time.Second, func() {
+				stop()
+			})
+
+			t.Run("Then the timer should emit at least 3 items", func(t *testing.T) {
+				assertWithinTime(t, 5*time.Second, func() {
+					actual := obs.ToResult()
+					assert.GreaterOrEqual(t, len(actual), 3)
+				})
+			})
+
+		})
+
 	})
 }
 
