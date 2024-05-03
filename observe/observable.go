@@ -29,13 +29,19 @@ type Context struct {
 }
 
 const (
+	// ContinueOnError instructs the observable to continue observing items when an error is encountered
 	ContinueOnError ErrorStrategy = "continue"
-	StopOnError     ErrorStrategy = "stop"
+	// StopOnError instructs the observable to stop observing items when an error is encountered
+	StopOnError ErrorStrategy = "stop"
 
-	Drop  BackpressureStrategy = "drop"
+	// Drop instructs the observable to drop items when the downstream is not ready to receive them
+	Drop BackpressureStrategy = "drop"
+	// Block instructs the observable to block on sending items until the downstream is ready to receive them
 	Block BackpressureStrategy = "block"
 
-	Failed    CompleteReason = "failure"
+	// Failed indicates that the observable has encountered an error whilst observing the upstream sequence
+	Failed CompleteReason = "failure"
+	// Completed indicates that the observable has completed observing the upstream sequence
 	Completed CompleteReason = "completed"
 
 	// Immediately instructs the observable to start observing as soon as the observable is instantiated
@@ -54,6 +60,7 @@ func Producer[T any](producer ProducerFunc[T], opts ...Option) *Observable[T] {
 	)
 }
 
+// Cron is an observable that emits items on a specified cron schedule
 func Cron(cronPattern string, opts ...Option) (*Observable[time.Time], StopFunc) {
 	parser := cron.NewParser(
 		cron.SecondOptional | cron.Minute | cron.Hour | cron.Dom | cron.Month | cron.Dow | cron.Descriptor,
@@ -110,6 +117,7 @@ func Timer(interval time.Duration, opts ...Option) (*Observable[time.Time], Stop
 	), stopper
 }
 
+// Range observes a range of generated integers
 func Range(start, count int, opts ...Option) *Observable[int] {
 	return Producer[int](func(streamWriter StreamWriter[int]) {
 		for i := start; i < start+count; i++ {
@@ -118,6 +126,7 @@ func Range(start, count int, opts ...Option) *Observable[int] {
 	}, opts...)
 }
 
+// Stream observes items that are written to the StreamWriter produced by this function
 func Stream[T any](opts ...Option) (StreamWriter[T], *Observable[T]) {
 	source := newStream[T]()
 
@@ -175,7 +184,9 @@ func Operation[TIn any, TOut any](
 				opWg.Add(1)
 				go func(poolStream StreamReader[TIn], downstream StreamWriter[TOut]) {
 					defer opWg.Done()
+					now := time.Now()
 					operation(ctx, poolStream, downstream)
+					opts.metrics.Timing("operation_duration", time.Since(now))
 				}(poolStream, downstream)
 			}
 
@@ -285,6 +296,8 @@ func newObservableWithParent[T any](source func(streamWriter StreamWriter[T], op
 		downstream: newStream[T](),
 		parents:    parents,
 		subs:       newSubscribers[T](),
+		metrics:    opts.metrics,
+		logger:     opts.logger,
 	}
 
 	if opts.publishStrategy == Immediately {
@@ -299,70 +312,6 @@ type parentObservable interface {
 	cloneOptions() options
 }
 
-type subscriber[T any] struct {
-	next     OnNextFunc[T]
-	complete OnCompleteFunc
-	err      OnErrorFunc
-}
-
-type subscribers[T any] struct {
-	mu *sync.RWMutex
-	s  []subscriber[T]
-}
-
-func newSubscribers[T any]() *subscribers[T] {
-	return &subscribers[T]{
-		mu: new(sync.RWMutex),
-		s:  make([]subscriber[T], 0),
-	}
-}
-
-func (s *subscribers[T]) len() int {
-	s.mu.RLock()
-	defer s.mu.RUnlock()
-	return len(s.s)
-}
-
-func (s *subscribers[T]) hasSubscribers() bool {
-	s.mu.RLock()
-	defer s.mu.RUnlock()
-	return len(s.s) > 0
-}
-
-func (s *subscribers[T]) add(onNext OnNextFunc[T], errorFunc OnErrorFunc, completeFunc OnCompleteFunc) {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	s.s = append(s.s, subscriber[T]{
-		next:     onNext,
-		err:      errorFunc,
-		complete: completeFunc,
-	})
-}
-
-func (s *subscribers[T]) dispatchNext(v T) {
-	s.mu.RLock()
-	defer s.mu.RUnlock()
-	for _, sub := range s.s {
-		sub.next(v)
-	}
-}
-
-func (s *subscribers[T]) dispatchError(err error) {
-	s.mu.RLock()
-	defer s.mu.RUnlock()
-	for _, sub := range s.s {
-		sub.err(err)
-	}
-}
-
-func (s *subscribers[T]) dispatchComplete(reason CompleteReason, err error) {
-	s.mu.RLock()
-	defer s.mu.RUnlock()
-	for _, sub := range s.s {
-		sub.complete(reason, err)
-	}
-}
-
 type Observable[T any] struct {
 	mu   *sync.Mutex
 	opts options
@@ -375,9 +324,11 @@ type Observable[T any] struct {
 	// connected is a flag that indicates whether the observable has begun observing items from the upstream
 	connected bool
 	subs      *subscribers[T]
+	metrics   MetricsMonitor
+	logger    Logger
 }
 
-// Observe starts the observation of the upstream stream
+// Connect starts the observation of the upstream stream
 func (o *Observable[T]) Connect() {
 	o.mu.Lock()
 	defer o.mu.Unlock()
@@ -401,7 +352,11 @@ func (o *Observable[T]) Connect() {
 		for {
 			select {
 			case <-o.opts.ctx.Done():
+				now := time.Now()
 				o.downstream.Error(o.opts.ctx.Err())
+				o.metrics.Timing("item_backpressure", time.Since(now))
+				o.metrics.Incr("item_emitted", 1)
+				o.metrics.Incr("error_emitted", 1)
 				return
 			case item, ok := <-upstream.Read():
 				if !ok {
@@ -409,14 +364,30 @@ func (o *Observable[T]) Connect() {
 				}
 
 				if item.Error() != nil && o.opts.errorStrategy == StopOnError {
+					now := time.Now()
 					o.downstream.Send(item)
+					o.metrics.Timing("item_backpressure", time.Since(now))
+					o.metrics.Incr("item_emitted", 1)
+					o.metrics.Incr("error_emitted", 1)
 					return
 				}
 
 				if o.opts.backpressureStrategy == Drop {
-					o.downstream.TrySend(item)
+					now := time.Now()
+					ok := o.downstream.TrySend(item)
+					o.metrics.Timing("item_backpressure", time.Since(now))
+					if ok {
+						o.metrics.Incr("item_emitted", 1)
+						o.metrics.Incr("value_emitted", 1)
+					} else {
+						o.metrics.Incr("value_dropped", 1)
+					}
 				} else {
+					now := time.Now()
 					o.downstream.Send(item)
+					o.metrics.Timing("item_backpressure", time.Since(now))
+					o.metrics.Incr("item_emitted", 1)
+					o.metrics.Incr("value_emitted", 1)
 				}
 			}
 		}

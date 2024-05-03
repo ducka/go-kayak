@@ -12,10 +12,6 @@ import (
 
 func TestDemo(t *testing.T) {
 
-	/* TODOs
-	1) Implement Merge and Fork
-	*/
-
 	wg := &sync.WaitGroup{}
 	wg.Add(1)
 

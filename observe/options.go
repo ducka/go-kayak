@@ -13,6 +13,8 @@ type options struct {
 	poolSize             int
 	buffer               uint64
 	publishStrategy      PublishStrategy
+	logger               Logger
+	metrics              MetricsMonitor
 }
 
 func newOptions() options {
@@ -22,6 +24,8 @@ func newOptions() options {
 		errorStrategy:        StopOnError,
 		buffer:               0,
 		publishStrategy:      Immediately,
+		logger:               &NilLogger{},
+		metrics:              &NilMetricsMonitor{},
 	}
 }
 
@@ -78,6 +82,18 @@ func WithPool(poolSize int) Option {
 		}
 
 		options.poolSize = poolSize
+	}
+}
+
+func WithLogger(logger Logger) Option {
+	return func(options *options) {
+		options.logger = logger
+	}
+}
+
+func WithMetrics(metricsMonitor MetricsMonitor) Option {
+	return func(options *options) {
+		options.metrics = metricsMonitor
 	}
 }
 
