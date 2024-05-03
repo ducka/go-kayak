@@ -16,7 +16,7 @@ func TestDemo(t *testing.T) {
 	*/
 
 	ob := operator.Pipe7(
-		observe.Range(0, 100),
+		observe.Range(0, 100, observe.WithActivityName("Observing kafka")),
 		operator.Filter[int](func(item int) bool {
 			// only emit even numbers
 			return item%2 == 0

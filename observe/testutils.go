@@ -1,5 +1,10 @@
 package observe
 
+import (
+	"testing"
+	"time"
+)
+
 func GenerateIntSequence(start, sequenceSize int) []int {
 	sequence := make([]int, 0, sequenceSize)
 	for i := start; i < sequenceSize+start; i++ {
@@ -22,4 +27,17 @@ func ConvertToValues[T any](notifications ...Notification[T]) []T {
 		values = append(values, n.Value())
 	}
 	return values
+}
+
+func assertWithinTime(t *testing.T, duration time.Duration, f func()) {
+	done := make(chan struct{})
+	go func() {
+		f()
+		close(done)
+	}()
+	select {
+	case <-done:
+	case <-time.After(duration):
+		t.Errorf("Test did not excecute within the specified timeout of %v", duration)
+	}
 }

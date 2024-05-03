@@ -3,6 +3,7 @@ package observe
 import (
 	"context"
 	"sync"
+	"time"
 )
 
 type (
@@ -11,6 +12,7 @@ type (
 	OnNextFunc[T any]                func(v T)
 	ProducerFunc[T any]              func(streamWriter StreamWriter[T])
 	OperationFunc[TIn any, TOut any] func(Context, StreamReader[TIn], StreamWriter[TOut])
+	TimerStopFunc                    func()
 
 	ErrorStrategy        string
 	BackpressureStrategy string
@@ -41,6 +43,27 @@ func Producer[T any](producer ProducerFunc[T], opts ...Option) *Observable[T] {
 		},
 		opts...,
 	)
+}
+
+// Timer is an observable that emits items on a specified interval
+func Timer(interval time.Duration) (*Observable[time.Time], TimerStopFunc) {
+	ticker := time.NewTicker(interval)
+	done := make(chan interface{})
+	stopper := func() {
+		defer close(done)
+		ticker.Stop()
+	}
+	return Producer[time.Time](func(streamWriter StreamWriter[time.Time]) {
+		defer ticker.Stop()
+		for {
+			select {
+			case <-done:
+				return
+			case t := <-ticker.C:
+				streamWriter.Write(t)
+			}
+		}
+	}), stopper
 }
 
 func Range(start, count int, opts ...Option) *Observable[int] {

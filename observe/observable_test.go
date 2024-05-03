@@ -54,12 +54,12 @@ func TestObservable(t *testing.T) {
 
 		sut := Producer[int](func(stream StreamWriter[int]) {
 			stream.Write(1)
-			stream.Error(err, 2)
+			stream.Error(err)
 			stream.Write(3)
 		}, WithErrorStrategy(ContinueOnError))
 
 		t.Run("And an operator processes the sequence with a ContinueOnError strategy", func(t *testing.T) {
-			op := Operation[int, int](sut, func(s StreamReader[int], s2 StreamWriter[int]) {
+			op := Operation[int, int](sut, func(ctx Context, s StreamReader[int], s2 StreamWriter[int]) {
 				for item := range s.Read() {
 					s2.Send(item)
 				}
@@ -209,7 +209,7 @@ func TestObservable(t *testing.T) {
 
 		op := Operation[int, int](
 			ob,
-			func(s StreamReader[int], s2 StreamWriter[int]) {
+			func(ctx Context, s StreamReader[int], s2 StreamWriter[int]) {
 				// The number of times this operator function executes should equal the pool size. Each operator function has its own
 				// stream which is written to in a roundrobin style concurrently. If this active producers count doesn't match the pool
 				// size, this should indicate a bug in the pool implementation.
@@ -285,6 +285,23 @@ func TestObservable(t *testing.T) {
 				actual := obs.ToResult()
 				expected := ConvertToNotifications(sequence...)
 				assert.Equal(t, expected, actual)
+			})
+		})
+	})
+
+	t.Run("When observing a timer of 100ms intervals", func(t *testing.T) {
+		obs, stop := Timer(100 * time.Millisecond)
+
+		t.Run("And we stop the timer after 500ms", func(t *testing.T) {
+			time.AfterFunc(500*time.Millisecond, func() {
+				stop()
+			})
+
+			t.Run("Then the timer should emit 5 items", func(t *testing.T) {
+				//assertWithinTime(t, 600*time.Millisecond, func() {
+				actual := obs.ToResult()
+				assert.Len(t, actual, 5)
+				//})
 			})
 		})
 	})
