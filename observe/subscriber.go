@@ -13,12 +13,14 @@ type subscriber[T any] struct {
 type subscribers[T any] struct {
 	mu *sync.RWMutex
 	s  []subscriber[T]
+	wg *sync.WaitGroup
 }
 
 func newSubscribers[T any]() *subscribers[T] {
 	return &subscribers[T]{
 		mu: new(sync.RWMutex),
 		s:  make([]subscriber[T], 0),
+		wg: new(sync.WaitGroup),
 	}
 }
 
@@ -37,6 +39,7 @@ func (s *subscribers[T]) hasSubscribers() bool {
 func (s *subscribers[T]) add(onNext OnNextFunc[T], errorFunc OnErrorFunc, completeFunc OnCompleteFunc) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
+	s.wg.Add(1)
 	s.s = append(s.s, subscriber[T]{
 		next:     onNext,
 		err:      errorFunc,
@@ -65,5 +68,10 @@ func (s *subscribers[T]) dispatchComplete(reason CompleteReason, err error) {
 	defer s.mu.RUnlock()
 	for _, sub := range s.s {
 		sub.complete(reason, err)
+		s.wg.Done()
 	}
+}
+
+func (s *subscribers[T]) WaitTillComplete() {
+	s.wg.Wait()
 }

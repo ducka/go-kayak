@@ -170,9 +170,8 @@ func TestObservable(t *testing.T) {
 			items := make([]int, 0, sequenceLength)
 
 			sut.Subscribe(func(item int) {
-				wg.Wait()
 				items = append(items, item)
-			})
+			}, WithWaitTillComplete())
 
 			t.Run("Then most of the items should be dropped", func(t *testing.T) {
 				assert.Less(t, len(items), sequenceLength)
@@ -242,6 +241,7 @@ func TestObservable(t *testing.T) {
 		poolSize := 5
 		wg := &sync.WaitGroup{}
 		wg.Add(poolSize)
+		mu := &sync.Mutex{}
 
 		ob := Sequence(GenerateIntSequence(0, 15))
 
@@ -253,7 +253,9 @@ func TestObservable(t *testing.T) {
 				// The number of times this operator function executes should equal the pool size. Each operator function has its own
 				// stream which is written to in a roundrobin style concurrently. If this active producers count doesn't match the pool
 				// size, this should indicate a bug in the pool implementation.
+				mu.Lock()
 				activeProducers++
+				mu.Unlock()
 
 				for item := range s.Read() {
 					time.Sleep(100 * time.Millisecond)
@@ -277,6 +279,7 @@ func TestObservable(t *testing.T) {
 	})
 
 	t.Run("When configuring an observable with a buffer", func(t *testing.T) {
+		mu := &sync.Mutex{}
 		actual := uint64(0)
 		bufferSize := uint64(10)
 
@@ -284,7 +287,9 @@ func TestObservable(t *testing.T) {
 			func(streamWriter StreamWriter[int]) {
 				for i := 0; i < 15; i++ {
 					// increment the counter to observe the buffer filling up
+					mu.Lock()
 					actual++
+					mu.Unlock()
 
 					streamWriter.Write(i)
 				}
@@ -302,9 +307,12 @@ func TestObservable(t *testing.T) {
 
 		t.Run("Then the observables buffer should fill up when the observable is observed", func(t *testing.T) {
 			// We add 2 here to account for channels internal to the Observer that are being primed with items
+
+			mu.Lock()
 			expected := bufferSize + 2
 
 			assert.Equal(t, expected, actual)
+			mu.Unlock()
 		})
 	})
 

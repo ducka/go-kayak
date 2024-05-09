@@ -100,7 +100,7 @@ func WithMetrics(metricsMonitor MetricsMonitor) Option {
 type subscribeOptions struct {
 	onError          OnErrorFunc
 	onComplete       OnCompleteFunc
-	waitTillFinished bool
+	waitTillComplete bool
 }
 
 type SubscribeOption func(options *subscribeOptions)
@@ -114,5 +114,11 @@ func WithOnError(onError OnErrorFunc) SubscribeOption {
 func WithOnComplete(onComplete OnCompleteFunc) SubscribeOption {
 	return func(options *subscribeOptions) {
 		options.onComplete = onComplete
+	}
+}
+
+func WithWaitTillComplete() SubscribeOption {
+	return func(options *subscribeOptions) {
+		options.waitTillComplete = true
 	}
 }

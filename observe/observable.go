@@ -464,6 +464,10 @@ func (o *Observable[T]) Subscribe(onNext OnNextFunc[T], options ...SubscribeOpti
 			o.subs.dispatchComplete(reason, err)
 		}()
 	}
+
+	if subscribeOptions.waitTillComplete {
+		o.subs.WaitTillComplete()
+	}
 }
 
 func (o *Observable[T]) getContext() context.Context {
