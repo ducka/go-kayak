@@ -14,7 +14,7 @@ type Notification[T any] interface {
 	Kind() NotificationKind
 	Value() T // returns the underlying value if it's a "Next" notification
 	Error() error
-	HasError() bool
+	IsError() bool
 	HasValue() bool
 }
 
@@ -39,7 +39,7 @@ func (d notification[T]) Error() error {
 	return d.err
 }
 
-func (d notification[T]) HasError() bool {
+func (d notification[T]) IsError() bool {
 	return d.err != nil
 }
 

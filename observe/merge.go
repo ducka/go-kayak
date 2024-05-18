@@ -20,10 +20,10 @@ func MergeWithDelayedErrors[T any](observables ...*Observable[T]) *Observable[T]
 func merge[T any](
 	observables []*Observable[T],
 	delayErrors bool,
-	opts ...Option,
+	opts ...ObservableOption,
 ) *Observable[T] {
 	return newObservableWithParent[T](
-		func(downstream StreamWriter[T], opts options) {
+		func(downstream StreamWriter[T], opts observableOptions) {
 			mu := &sync.Mutex{}
 			startWg := &sync.WaitGroup{}
 			startWg.Add(1)
@@ -37,7 +37,7 @@ func merge[T any](
 				// block until all observables are observing
 				startWg.Wait()
 				for item := range o.ToStream().Read() {
-					if item.HasError() && delayErrors {
+					if item.IsError() && delayErrors {
 						mu.Lock()
 						errors = append(errors, item)
 						mu.Unlock()

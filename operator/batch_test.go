@@ -34,7 +34,7 @@ func TestBatch(t *testing.T) {
 			}
 		})
 
-		t.Run("Then the last batch should have 5 items", func(t *testing.T) {
+		t.Run("Then the last batch should have 5 Items", func(t *testing.T) {
 			lastItem := actual[len(actual)-1]
 			assert.Equal(t, len(lastItem.Value()), numberOfItems%batchSize)
 		})

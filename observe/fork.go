@@ -1,7 +1,7 @@
 package observe
 
 // Fork splits the source observable into multiple downstream observables.
-func Fork[T any](source *Observable[T], count int, opts ...Option) []*Observable[T] {
+func Fork[T any](source *Observable[T], count int, opts ...ObservableOption) []*Observable[T] {
 	observables := make([]*Observable[T], count)
 	streams := make([]StreamWriter[T], count)
 

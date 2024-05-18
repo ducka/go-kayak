@@ -10,7 +10,7 @@ type (
 	SorterFunc[T any] func(left, right T) bool
 )
 
-func Sort[T any](comparer SorterFunc[T], opts ...observe.Option) OperatorFunc[T, T] {
+func Sort[T any](comparer SorterFunc[T], opts ...observe.ObservableOption) OperatorFunc[T, T] {
 	opts = defaultActivityName("Sort", opts)
 	return func(source *observe.Observable[T]) *observe.Observable[T] {
 		return observe.Operation[T, T](
@@ -19,9 +19,9 @@ func Sort[T any](comparer SorterFunc[T], opts ...observe.Option) OperatorFunc[T,
 				sorted := make([]observe.Notification[T], 0)
 				unsorted := make([]observe.Notification[T], 0)
 
-				// Read the items into the buffer, in preparation for a sort.
+				// Read the Items into the buffer, in preparation for a sort.
 				for i := range upstream.Read() {
-					if !i.HasError() {
+					if !i.IsError() {
 						sorted = append(sorted, i)
 					} else {
 						unsorted = append(unsorted, i)

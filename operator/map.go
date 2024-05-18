@@ -8,8 +8,8 @@ type (
 	MapFunc[TIn, TOut any] func(item TIn, index int) (TOut, error)
 )
 
-// Map transforms the items emitted by an Observable by applying a function to each item.
-func Map[TIn any, TOut any](mapper MapFunc[TIn, TOut], opts ...observe.Option) OperatorFunc[TIn, TOut] {
+// Map transforms the Items emitted by an Observable by applying a function to each item.
+func Map[TIn any, TOut any](mapper MapFunc[TIn, TOut], opts ...observe.ObservableOption) OperatorFunc[TIn, TOut] {
 	if mapper == nil {
 		panic(`"Map" expected mapper func`)
 	}

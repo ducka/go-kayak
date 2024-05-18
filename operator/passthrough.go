@@ -4,8 +4,8 @@ import (
 	"github.com/ducka/go-kayak/observe"
 )
 
-// Passthrough is an operator that passes all items through without modification.
-func Passthrough[T any](opts ...observe.Option) OperatorFunc[T, T] {
+// Passthrough is an operator that passes all Items through without modification.
+func Passthrough[T any](opts ...observe.ObservableOption) OperatorFunc[T, T] {
 	opts = defaultActivityName("Passthrough", opts)
 	return func(source *observe.Observable[T]) *observe.Observable[T] {
 		return observe.Operation[T, T](

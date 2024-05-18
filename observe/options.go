@@ -5,7 +5,7 @@ import (
 	"runtime"
 )
 
-type options struct {
+type observableOptions struct {
 	ctx                  context.Context
 	activity             string
 	backpressureStrategy BackpressureStrategy
@@ -17,8 +17,8 @@ type options struct {
 	metrics              MetricsMonitor
 }
 
-func newOptions() options {
-	return options{
+func newOptions() observableOptions {
+	return observableOptions{
 		ctx:                  context.Background(),
 		backpressureStrategy: Block,
 		errorStrategy:        StopOnError,
@@ -29,53 +29,53 @@ func newOptions() options {
 	}
 }
 
-type Option func(options *options)
+type ObservableOption func(options *observableOptions)
 
 // WithPublishStrategy instructs the observable when to start observing items
-func WithPublishStrategy(strategy PublishStrategy) Option {
-	return func(options *options) {
+func WithPublishStrategy(strategy PublishStrategy) ObservableOption {
+	return func(options *observableOptions) {
 		options.publishStrategy = strategy
 	}
 }
 
-func WithContext(ctx context.Context) Option {
-	return func(options *options) {
+func WithContext(ctx context.Context) ObservableOption {
+	return func(options *observableOptions) {
 		options.ctx = ctx
 	}
 }
 
-func WithErrorStrategy(strategy ErrorStrategy) Option {
-	return func(options *options) {
+func WithErrorStrategy(strategy ErrorStrategy) ObservableOption {
+	return func(options *observableOptions) {
 		options.errorStrategy = strategy
 	}
 }
 
-func WithBackpressureStrategy(strategy BackpressureStrategy) Option {
-	return func(options *options) {
+func WithBackpressureStrategy(strategy BackpressureStrategy) ObservableOption {
+	return func(options *observableOptions) {
 		options.backpressureStrategy = strategy
 	}
 }
 
-func WithActivityName(activityName string) Option {
-	return func(options *options) {
+func WithActivityName(activityName string) ObservableOption {
+	return func(options *observableOptions) {
 		options.activity = activityName
 	}
 }
 
-func WithBuffer(buffer uint64) func(options *options) {
-	return func(options *options) {
+func WithBuffer(buffer uint64) func(options *observableOptions) {
+	return func(options *observableOptions) {
 		options.buffer = buffer
 	}
 }
 
 // WithCPUPool sets the number of goroutines to use for currently processing items to the number of CPU cores on the host machine
-func WithCPUPool() Option {
+func WithCPUPool() ObservableOption {
 	return WithPool(runtime.NumCPU())
 }
 
 // WithPool sets the number of goroutines to use for concurrently processing items
-func WithPool(poolSize int) Option {
-	return func(options *options) {
+func WithPool(poolSize int) ObservableOption {
+	return func(options *observableOptions) {
 		if poolSize < 1 {
 			options.poolSize = 1
 			return
@@ -85,14 +85,14 @@ func WithPool(poolSize int) Option {
 	}
 }
 
-func WithLogger(logger Logger) Option {
-	return func(options *options) {
+func WithLogger(logger Logger) ObservableOption {
+	return func(options *observableOptions) {
 		options.logger = logger
 	}
 }
 
-func WithMetrics(metricsMonitor MetricsMonitor) Option {
-	return func(options *options) {
+func WithMetrics(metricsMonitor MetricsMonitor) ObservableOption {
+	return func(options *observableOptions) {
 		options.metrics = metricsMonitor
 	}
 }
