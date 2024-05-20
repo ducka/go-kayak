@@ -2,6 +2,7 @@ package go_kayak
 
 import (
 	"fmt"
+	"strconv"
 	"sync"
 	"testing"
 	"time"
@@ -58,4 +59,75 @@ func TestDemo(t *testing.T) {
 		}))
 
 	wg.Wait()
+}
+
+func TestStageDemo(t *testing.T) {
+
+	in1 := observe.Array[testInputItem](
+		[]testInputItem{
+			testInputItem{Id: 1, Value: "In1"},
+			testInputItem{Id: 2, Value: "In1"},
+			testInputItem{Id: 3, Value: "In1"},
+		},
+	)
+
+	in2 := observe.Array[testInputItem](
+		[]testInputItem{
+			testInputItem{Id: 1, Value: "In2"},
+			testInputItem{Id: 3, Value: "In2"},
+		},
+	)
+
+	in3 := observe.Array[testInputItem](
+		[]testInputItem{
+			testInputItem{Id: 1, Value: "In3"},
+		},
+	)
+
+	sut := operator.Pipe1(
+		observe.Stage10(
+			in1, in2, in3, observe.Empty[testInputItem](), observe.Empty[testInputItem](), observe.Empty[testInputItem](), observe.Empty[testInputItem](), observe.Empty[testInputItem](), observe.Empty[testInputItem](), observe.Empty[testInputItem](),
+			func(in1, in2, in3, in4, in5, in6, in7, in8, in9, in10 *testInputItem, out testOuputItem) (*testOuputItem, error) {
+				if in1 != nil {
+					out.Value1 = in1.Value
+					out.Id = in1.Id
+				}
+				if in2 != nil {
+					out.Value2 = in2.Value
+					out.Id = in2.Id
+				}
+				if in3 != nil {
+					out.Value3 = in3.Value
+					out.Id = in3.Id
+				}
+				return &out, nil
+			},
+		),
+		operator.Filter(func(item testOuputItem) bool {
+			return true
+			//return !(item.Value1 == "" || item.Value2 == "" || item.Value3 == "")
+		}),
+	)
+
+	out := sut.ToResult()
+
+	for _, item := range out {
+		fmt.Println(item.Value())
+	}
+}
+
+type testInputItem struct {
+	Id    int
+	Value string
+}
+
+func (i testInputItem) GetKey() []string {
+	return []string{strconv.Itoa(i.Id)}
+}
+
+type testOuputItem struct {
+	Id     int
+	Value1 string
+	Value2 string
+	Value3 string
 }

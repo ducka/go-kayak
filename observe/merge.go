@@ -22,7 +22,7 @@ func merge[T any](
 	delayErrors bool,
 	opts ...ObservableOption,
 ) *Observable[T] {
-	return newObservableWithParent[T](
+	return newObservable[T](
 		func(downstream StreamWriter[T], opts observableOptions) {
 			mu := &sync.Mutex{}
 			startWg := &sync.WaitGroup{}
@@ -55,7 +55,7 @@ func merge[T any](
 			startWg.Done()
 			closeWg.Wait()
 		},
-		convertObservable(observables...),
+		mapToParentObservable(observables...),
 		opts...,
 	)
 }

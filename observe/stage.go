@@ -1,7 +1,6 @@
 package observe
 
 import (
-	"fmt"
 	"strings"
 
 	"github.com/ducka/go-kayak/utils"
@@ -92,6 +91,16 @@ func Stage10[TIn1, TIn2, TIn3, TIn4, TIn5, TIn6, TIn7, TIn8, TIn9, TIn10 Identif
 	options ...StageOption,
 ) *Observable[TOut] {
 
+	// TODO: Now that you have MergeMap, you should be able to gut most of this function.
+	// 1) Use merge map to achieve type erasure on the input observables. Each emited item
+	// should contain an any value, an an indication of which input it came from.
+	// 2) Batch the items up into batches of 10, or something like that
+	// 3) Process the batches by acquiring a WATCH lock for the items in the batch, retrieving state for each of the items
+	// applying the items changes to the state, persisting the state, releasing the lock, and emitting the state downstream.
+	//
+	// Note:
+	// - Process should utilise Pool to achieve concurrent updates to redis
+
 	opts := stageOptions{
 		store: NewInMemoryStateStore(),
 	}
@@ -104,11 +113,11 @@ func Stage10[TIn1, TIn2, TIn3, TIn4, TIn5, TIn6, TIn7, TIn8, TIn9, TIn10 Identif
 	obsOptions := append([]ObservableOption{WithContext(combinedCtx)}, opts.observableOptions...)
 
 	// TODO: This is basically the same as the Stream observable, except we're suplying parents. See if this can be consolidated.
-	sw := newStream[TOut]()
-	output := newObservableWithParent[TOut](
-		func(streamWriter StreamWriter[TOut], _ observableOptions) {
-			for item := range sw.Read() {
-				streamWriter.Send(item)
+	downstream := newStream[TOut]()
+	output := newObservable[TOut](
+		func(sw StreamWriter[TOut], _ observableOptions) {
+			for item := range downstream.Read() {
+				sw.Send(item)
 			}
 		},
 		[]parentObservable{in1, in2, in3, in4, in5, in6, in7, in8, in9, in10},
@@ -118,7 +127,7 @@ func Stage10[TIn1, TIn2, TIn3, TIn4, TIn5, TIn6, TIn7, TIn8, TIn9, TIn10 Identif
 	var done1, done2, done3, done4, done5, done6, done7, done8, done9, done10 bool
 
 	go func() {
-		defer sw.Close()
+		defer downstream.Close()
 
 		for done1 != true || done2 != true || done3 != true || done4 != true || done5 != true || done6 != true || done7 != true || done8 != true || done9 != true || done10 != true {
 			select {
@@ -128,8 +137,8 @@ func Stage10[TIn1, TIn2, TIn3, TIn4, TIn5, TIn6, TIn7, TIn8, TIn9, TIn10 Identif
 					break
 				}
 
-				processInput(opts.store, item, sw, func(state TOut) (*TOut, error) {
-					value := item.Value()
+				processInput(opts.store, item, downstream, func(input Notification[TIn1], state TOut) (*TOut, error) {
+					value := input.Value()
 					return stateMapper(&value, nil, nil, nil, nil, nil, nil, nil, nil, nil, state)
 				})
 			case item, ok := <-in2.ToStream().Read():
@@ -138,8 +147,8 @@ func Stage10[TIn1, TIn2, TIn3, TIn4, TIn5, TIn6, TIn7, TIn8, TIn9, TIn10 Identif
 					break
 				}
 
-				processInput(opts.store, item, sw, func(state TOut) (*TOut, error) {
-					value := item.Value()
+				processInput(opts.store, item, downstream, func(input Notification[TIn2], state TOut) (*TOut, error) {
+					value := input.Value()
 					return stateMapper(nil, &value, nil, nil, nil, nil, nil, nil, nil, nil, state)
 				})
 			case item, ok := <-in3.ToStream().Read():
@@ -148,8 +157,8 @@ func Stage10[TIn1, TIn2, TIn3, TIn4, TIn5, TIn6, TIn7, TIn8, TIn9, TIn10 Identif
 					break
 				}
 
-				processInput(opts.store, item, sw, func(state TOut) (*TOut, error) {
-					value := item.Value()
+				processInput(opts.store, item, downstream, func(input Notification[TIn3], state TOut) (*TOut, error) {
+					value := input.Value()
 					return stateMapper(nil, nil, &value, nil, nil, nil, nil, nil, nil, nil, state)
 				})
 			case item, ok := <-in4.ToStream().Read():
@@ -158,8 +167,8 @@ func Stage10[TIn1, TIn2, TIn3, TIn4, TIn5, TIn6, TIn7, TIn8, TIn9, TIn10 Identif
 					break
 				}
 
-				processInput(opts.store, item, sw, func(state TOut) (*TOut, error) {
-					value := item.Value()
+				processInput(opts.store, item, downstream, func(input Notification[TIn4], state TOut) (*TOut, error) {
+					value := input.Value()
 					return stateMapper(nil, nil, nil, &value, nil, nil, nil, nil, nil, nil, state)
 				})
 			case item, ok := <-in5.ToStream().Read():
@@ -168,8 +177,8 @@ func Stage10[TIn1, TIn2, TIn3, TIn4, TIn5, TIn6, TIn7, TIn8, TIn9, TIn10 Identif
 					break
 				}
 
-				processInput(opts.store, item, sw, func(state TOut) (*TOut, error) {
-					value := item.Value()
+				processInput(opts.store, item, downstream, func(input Notification[TIn5], state TOut) (*TOut, error) {
+					value := input.Value()
 					return stateMapper(nil, nil, nil, nil, &value, nil, nil, nil, nil, nil, state)
 				})
 			case item, ok := <-in6.ToStream().Read():
@@ -178,8 +187,8 @@ func Stage10[TIn1, TIn2, TIn3, TIn4, TIn5, TIn6, TIn7, TIn8, TIn9, TIn10 Identif
 					break
 				}
 
-				processInput(opts.store, item, sw, func(state TOut) (*TOut, error) {
-					value := item.Value()
+				processInput(opts.store, item, downstream, func(input Notification[TIn6], state TOut) (*TOut, error) {
+					value := input.Value()
 					return stateMapper(nil, nil, nil, nil, nil, &value, nil, nil, nil, nil, state)
 				})
 			case item, ok := <-in7.ToStream().Read():
@@ -188,8 +197,8 @@ func Stage10[TIn1, TIn2, TIn3, TIn4, TIn5, TIn6, TIn7, TIn8, TIn9, TIn10 Identif
 					break
 				}
 
-				processInput(opts.store, item, sw, func(state TOut) (*TOut, error) {
-					value := item.Value()
+				processInput(opts.store, item, downstream, func(input Notification[TIn7], state TOut) (*TOut, error) {
+					value := input.Value()
 					return stateMapper(nil, nil, nil, nil, nil, nil, &value, nil, nil, nil, state)
 				})
 			case item, ok := <-in8.ToStream().Read():
@@ -198,8 +207,8 @@ func Stage10[TIn1, TIn2, TIn3, TIn4, TIn5, TIn6, TIn7, TIn8, TIn9, TIn10 Identif
 					break
 				}
 
-				processInput(opts.store, item, sw, func(state TOut) (*TOut, error) {
-					value := item.Value()
+				processInput(opts.store, item, downstream, func(input Notification[TIn8], state TOut) (*TOut, error) {
+					value := input.Value()
 					return stateMapper(nil, nil, nil, nil, nil, nil, nil, &value, nil, nil, state)
 				})
 			case item, ok := <-in9.ToStream().Read():
@@ -208,8 +217,8 @@ func Stage10[TIn1, TIn2, TIn3, TIn4, TIn5, TIn6, TIn7, TIn8, TIn9, TIn10 Identif
 					break
 				}
 
-				processInput(opts.store, item, sw, func(state TOut) (*TOut, error) {
-					value := item.Value()
+				processInput(opts.store, item, downstream, func(input Notification[TIn9], state TOut) (*TOut, error) {
+					value := input.Value()
 					return stateMapper(nil, nil, nil, nil, nil, nil, nil, nil, &value, nil, state)
 				})
 			case item, ok := <-in10.ToStream().Read():
@@ -218,8 +227,8 @@ func Stage10[TIn1, TIn2, TIn3, TIn4, TIn5, TIn6, TIn7, TIn8, TIn9, TIn10 Identif
 					break
 				}
 
-				processInput(opts.store, item, sw, func(state TOut) (*TOut, error) {
-					value := item.Value()
+				processInput(opts.store, item, downstream, func(input Notification[TIn10], state TOut) (*TOut, error) {
+					value := input.Value()
 					return stateMapper(nil, nil, nil, nil, nil, nil, nil, nil, nil, &value, state)
 				})
 			}
@@ -230,24 +239,24 @@ func Stage10[TIn1, TIn2, TIn3, TIn4, TIn5, TIn6, TIn7, TIn8, TIn9, TIn10 Identif
 	return output
 }
 
-func processInput[TIn Identifiable, TOut any](store StateStore, in Notification[TIn], sw StreamWriter[TOut], callback func(TOut) (*TOut, error)) {
-	if in.IsError() {
-		sw.Error(in.Error())
+func processInput[TIn Identifiable, TOut any](store StateStore, input Notification[TIn], downstream StreamWriter[TOut], callback func(Notification[TIn], TOut) (*TOut, error)) {
+	if input.IsError() {
+		downstream.Error(input.Error())
 		return
 	}
 
 	stateIn := new(TOut)
-	value := in.Value()
+	value := input.Value()
 	key := value.GetKey()
 
 	if s := store.Get(key); s != nil {
 		stateIn = s.(*TOut)
 	}
 
-	stateOut, err := callback(*stateIn)
+	stateOut, err := callback(input, *stateIn)
 
 	if err != nil {
-		sw.Error(err)
+		downstream.Error(err)
 		return
 	}
 
@@ -256,10 +265,8 @@ func processInput[TIn Identifiable, TOut any](store StateStore, in Notification[
 		return
 	}
 
-	fmt.Println(stateOut)
-
 	store.Set(key, stateOut)
-	sw.Write(*stateOut)
+	downstream.Write(*stateOut)
 }
 
 type stageOptions struct {

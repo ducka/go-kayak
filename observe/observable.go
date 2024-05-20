@@ -57,16 +57,19 @@ func Producer[T any](producer ProducerFunc[T], opts ...ObservableOption) *Observ
 		func(streamWriter StreamWriter[T], opts observableOptions) {
 			producer(streamWriter)
 		},
+		nil,
 		opts...,
 	)
 }
 
+// Empty is an observable that emits nothing. This observable completes immediately.
 func Empty[T any](opts ...ObservableOption) *Observable[T] {
 	return Producer[T](func(streamWriter StreamWriter[T]) {
 		streamWriter.Close()
 	}, opts...)
 }
 
+// Array is an observable that emits items from an array
 func Array[T any](items []T, opts ...ObservableOption) *Observable[T] {
 	return Producer[T](func(streamWriter StreamWriter[T]) {
 		for _, item := range items {
@@ -76,6 +79,7 @@ func Array[T any](items []T, opts ...ObservableOption) *Observable[T] {
 	}, opts...)
 }
 
+// Value is an observable that emits a single item
 func Value[T any](value T, opts ...ObservableOption) *Observable[T] {
 	return Producer[T](func(streamWriter StreamWriter[T]) {
 		streamWriter.Write(value)
@@ -150,17 +154,7 @@ func Range(start, count int, opts ...ObservableOption) *Observable[int] {
 
 // Stream observes items that are written to the StreamWriter produced by this function
 func Stream[T any](opts ...ObservableOption) (StreamWriter[T], *Observable[T]) {
-	source := newStream[T]()
-
-	return source,
-		newObservable[T](
-			func(streamWriter StreamWriter[T], options observableOptions) {
-				for item := range source.Read() {
-					streamWriter.Send(item)
-				}
-			},
-			opts...,
-		)
+	return newStreamObservable[T](nil, opts...)
 }
 
 // Sequence observes an array of values
@@ -180,7 +174,7 @@ func Operation[TIn any, TOut any](
 	operation OperationFunc[TIn, TOut],
 	opts ...ObservableOption,
 ) *Observable[TOut] {
-	observable := newObservableWithParent[TOut](
+	observable := newObservable[TOut](
 		func(downstream StreamWriter[TOut], opts observableOptions) {
 			opWg := &sync.WaitGroup{}
 			poolWg := &sync.WaitGroup{}
@@ -245,47 +239,29 @@ func Operation[TIn any, TOut any](
 			// Wait until the concurrently executing operations have finished writing to the downstream
 			opWg.Wait()
 		},
-		convertObservable(source),
+		mapToParentObservable(source),
 		opts...,
 	)
 
 	return observable
 }
 
-func newObservable[T any](upstreamCallback func(streamWriter StreamWriter[T], options observableOptions), options ...ObservableOption) *Observable[T] {
-	return newObservableWithParent[T](upstreamCallback, nil, options...)
+func newStreamObservable[T any](parents []parentObservable, opts ...ObservableOption) (StreamWriter[T], *Observable[T]) {
+	source := newStream[T]()
+
+	return source,
+		newObservable[T](
+			func(streamWriter StreamWriter[T], options observableOptions) {
+				for item := range source.Read() {
+					streamWriter.Send(item)
+				}
+			},
+			parents,
+			opts...,
+		)
 }
 
-func applyOptions(opts *observableOptions, parents []parentObservable) {
-	ctxs := make([]context.Context, 0, len(parents))
-	defaults := newOptions()
-	// Certain settings need to be propagated from parent observable observableOptions to their child
-	// observable observableOptions
-	for _, p := range parents {
-		o := p.cloneOptions()
-		ctxs = append(ctxs, o.ctx)
-
-		// Only set the following observableOptions if they deviate away from the defaults
-		if o.errorStrategy != defaults.errorStrategy {
-			opts.errorStrategy = o.errorStrategy
-		}
-		if o.publishStrategy == defaults.publishStrategy {
-			opts.publishStrategy = o.publishStrategy
-		}
-	}
-
-	opts.ctx = utils.CombinedContexts(ctxs...)
-}
-
-func convertObservable[T any](obs ...*Observable[T]) []parentObservable {
-	parents := make([]parentObservable, 0, len(obs))
-	for _, o := range obs {
-		parents = append(parents, o)
-	}
-	return parents
-}
-
-func newObservableWithParent[T any](source func(streamWriter StreamWriter[T], options observableOptions), parents []parentObservable, options ...ObservableOption) *Observable[T] {
+func newObservable[T any](source func(streamWriter StreamWriter[T], options observableOptions), parents []parentObservable, options ...ObservableOption) *Observable[T] {
 	opts := newOptions()
 
 	// Propagate observableOptions down the observable chain
@@ -493,4 +469,33 @@ func (o *Observable[T]) cloneOptions() observableOptions {
 		errorStrategy:   o.opts.errorStrategy,
 		publishStrategy: o.opts.publishStrategy,
 	}
+}
+
+func applyOptions(opts *observableOptions, parents []parentObservable) {
+	ctxs := make([]context.Context, 0, len(parents))
+	defaults := newOptions()
+	// Certain settings need to be propagated from parent observable observableOptions to their child
+	// observable observableOptions
+	for _, p := range parents {
+		o := p.cloneOptions()
+		ctxs = append(ctxs, o.ctx)
+
+		// Only set the following observableOptions if they deviate away from the defaults
+		if o.errorStrategy != defaults.errorStrategy {
+			opts.errorStrategy = o.errorStrategy
+		}
+		if o.publishStrategy == defaults.publishStrategy {
+			opts.publishStrategy = o.publishStrategy
+		}
+	}
+
+	opts.ctx = utils.CombinedContexts(ctxs...)
+}
+
+func mapToParentObservable[T any](obs ...*Observable[T]) []parentObservable {
+	parents := make([]parentObservable, 0, len(obs))
+	for _, o := range obs {
+		parents = append(parents, o)
+	}
+	return parents
 }
