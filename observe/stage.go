@@ -120,7 +120,7 @@ func Stage10[TIn1, TIn2, TIn3, TIn4, TIn5, TIn6, TIn7, TIn8, TIn9, TIn10 Identif
 				sw.Send(item)
 			}
 		},
-		[]parentObservable{in1, in2, in3, in4, in5, in6, in7, in8, in9, in10},
+		[]upstreamObservable{in1, in2, in3, in4, in5, in6, in7, in8, in9, in10},
 		obsOptions...,
 	)
 

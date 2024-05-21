@@ -217,7 +217,7 @@ func MergeMap10[TIn1, TIn2, TIn3, TIn4, TIn5, TIn6, TIn7, TIn8, TIn9, TIn10, TOu
 	in10 *Observable[TIn10],
 	mapper func(*TIn1, *TIn2, *TIn3, *TIn4, *TIn5, *TIn6, *TIn7, *TIn8, *TIn9, *TIn10) (TOut, error),
 ) *Observable[TOut] {
-	parents := []parentObservable{in1, in2, in3, in4, in5, in6, in7, in8, in9, in10}
+	parents := []upstreamObservable{in1, in2, in3, in4, in5, in6, in7, in8, in9, in10}
 	downstream, output := newStreamObservable[TOut](parents)
 
 	go func() {
@@ -330,5 +330,7 @@ func processMergeInput[TIn any, TOut any](input Notification[TIn], downstream St
 		return
 	}
 
-	downstream.Write(output)
+	if output != nil {
+		downstream.Write(output)
+	}
 }

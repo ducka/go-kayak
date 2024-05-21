@@ -14,6 +14,7 @@ type StreamWriter[T any] interface {
 
 type StreamReader[T any] interface {
 	Read() <-chan Notification[T]
+	Observe() *Observable[T]
 }
 type stream[T any] struct {
 	// to prevent DATA RACE
@@ -71,6 +72,10 @@ func (s *stream[T]) TrySend(notification Notification[T]) bool {
 	default:
 		return false
 	}
+}
+
+func (s *stream[T]) Observe() *Observable[T] {
+	return nil
 }
 
 func (s *stream[T]) send() chan<- Notification[T] {

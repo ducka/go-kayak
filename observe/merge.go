@@ -49,6 +49,7 @@ func merge[T any](
 
 			for _, o := range observables {
 				go f(o)
+				// TODO: Why am I doing a connect here? This doesn't seem right.
 				o.Connect()
 			}
 

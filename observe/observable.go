@@ -64,26 +64,26 @@ func Producer[T any](producer ProducerFunc[T], opts ...ObservableOption) *Observ
 
 // Empty is an observable that emits nothing. This observable completes immediately.
 func Empty[T any](opts ...ObservableOption) *Observable[T] {
-	return Producer[T](func(streamWriter StreamWriter[T]) {
+	return newObservable[T](func(streamWriter StreamWriter[T], opts observableOptions) {
 		streamWriter.Close()
-	}, opts...)
+	}, nil, opts...)
 }
 
 // Array is an observable that emits items from an array
 func Array[T any](items []T, opts ...ObservableOption) *Observable[T] {
-	return Producer[T](func(streamWriter StreamWriter[T]) {
+	return newObservable[T](func(streamWriter StreamWriter[T], opts observableOptions) {
 		for _, item := range items {
 			streamWriter.Write(item)
 		}
 		streamWriter.Close()
-	}, opts...)
+	}, nil, opts...)
 }
 
 // Value is an observable that emits a single item
 func Value[T any](value T, opts ...ObservableOption) *Observable[T] {
-	return Producer[T](func(streamWriter StreamWriter[T]) {
+	return newObservable[T](func(streamWriter StreamWriter[T], opts observableOptions) {
 		streamWriter.Write(value)
-	}, opts...)
+	}, nil, opts...)
 }
 
 // Cron is an observable that emits items on a specified cron schedule
@@ -102,8 +102,8 @@ func Cron(cronPattern string, opts ...ObservableOption) (*Observable[time.Time],
 		close(stopCh)
 	}
 
-	return Producer[time.Time](
-		func(streamWriter StreamWriter[time.Time]) {
+	return newObservable[time.Time](
+		func(streamWriter StreamWriter[time.Time], opts observableOptions) {
 
 			for {
 				next := schedule.Next(time.Now())
@@ -115,6 +115,7 @@ func Cron(cronPattern string, opts ...ObservableOption) (*Observable[time.Time],
 				}
 			}
 		},
+		nil,
 		opts...,
 	), stopper
 }
@@ -127,8 +128,8 @@ func Timer(interval time.Duration, opts ...ObservableOption) (*Observable[time.T
 		defer close(done)
 		ticker.Stop()
 	}
-	return Producer[time.Time](
-		func(streamWriter StreamWriter[time.Time]) {
+	return newObservable[time.Time](
+		func(streamWriter StreamWriter[time.Time], opts observableOptions) {
 			defer ticker.Stop()
 			for {
 				select {
@@ -139,17 +140,18 @@ func Timer(interval time.Duration, opts ...ObservableOption) (*Observable[time.T
 				}
 			}
 		},
+		nil,
 		opts...,
 	), stopper
 }
 
 // Range observes a range of generated integers
 func Range(start, count int, opts ...ObservableOption) *Observable[int] {
-	return Producer[int](func(streamWriter StreamWriter[int]) {
+	return newObservable[int](func(streamWriter StreamWriter[int], opts observableOptions) {
 		for i := start; i < start+count; i++ {
 			streamWriter.Write(i)
 		}
-	}, opts...)
+	}, nil, opts...)
 }
 
 // Stream observes items that are written to the StreamWriter produced by this function
@@ -159,11 +161,11 @@ func Stream[T any](opts ...ObservableOption) (StreamWriter[T], *Observable[T]) {
 
 // Sequence observes an array of values
 func Sequence[T any](sequence []T, opts ...ObservableOption) *Observable[T] {
-	return Producer[T](func(streamWriter StreamWriter[T]) {
+	return newObservable[T](func(streamWriter StreamWriter[T], opts observableOptions) {
 		for _, item := range sequence {
 			streamWriter.Write(item)
 		}
-	}, opts...)
+	}, nil, opts...)
 }
 
 // Operation observes items produce by an streams processing operation. This observable provides an operation callback that
@@ -246,7 +248,17 @@ func Operation[TIn any, TOut any](
 	return observable
 }
 
-func newStreamObservable[T any](parents []parentObservable, opts ...ObservableOption) (StreamWriter[T], *Observable[T]) {
+/* TODO: Potential changes to Observable
+1) You could create an observable that accepts a StreamReader as a producer of items. This could be an
+efficient way to pump items into the observable; however "buffer" will no longer work, as buffer is defined
+in the upstream Stream inside of the Observable.
+1.1) I think for the public interface it's important to maintain "buffer" functionality of an observable. This
+more efficient direct from stream observable should probably be some sort of specialist observable constructor.
+2) The producer driven version of the observable is still important. So is the version of the observable that produces
+a stream writer.
+*/
+
+func newStreamObservable[T any](parents []upstreamObservable, opts ...ObservableOption) (StreamWriter[T], *Observable[T]) {
 	source := newStream[T]()
 
 	return source,
@@ -261,7 +273,11 @@ func newStreamObservable[T any](parents []parentObservable, opts ...ObservableOp
 		)
 }
 
-func newObservable[T any](source func(streamWriter StreamWriter[T], options observableOptions), parents []parentObservable, options ...ObservableOption) *Observable[T] {
+func newProducerObservable[T any](producer func(streamWriter StreamWriter[T], options observableOptions), parents []upstreamObservable, options ...ObservableOption) *Observable[T] {
+
+}
+
+func newObservable[T any](producer func(streamWriter StreamWriter[T], options observableOptions), parents []upstreamObservable, options ...ObservableOption) *Observable[T] {
 	opts := newOptions()
 
 	// Propagate observableOptions down the observable chain
@@ -277,7 +293,7 @@ func newObservable[T any](source func(streamWriter StreamWriter[T], options obse
 	obs := &Observable[T]{
 		mu:         new(sync.Mutex),
 		opts:       opts,
-		source:     source,
+		producer:   producer,
 		downstream: newStream[T](),
 		parents:    parents,
 		subs:       newSubscribers[T](),
@@ -292,7 +308,7 @@ func newObservable[T any](source func(streamWriter StreamWriter[T], options obse
 	return obs
 }
 
-type parentObservable interface {
+type upstreamObservable interface {
 	Connect()
 	cloneOptions() observableOptions
 }
@@ -300,10 +316,10 @@ type parentObservable interface {
 type Observable[T any] struct {
 	mu   *sync.Mutex
 	opts observableOptions
-	// source is a function that produces the upstream stream of items to be observed
-	source func(StreamWriter[T], observableOptions)
+	// producer is a function that produces the upstream stream of items to be observed
+	producer func(StreamWriter[T], observableOptions)
 	// parent is the observable that has produced the upstream downstream of items
-	parents []parentObservable
+	parents []upstreamObservable
 	// downstream is the stream that will Send items to the observer
 	downstream *stream[T]
 	// connected is a flag that indicates whether the observable has begun observing items from the upstream
@@ -380,7 +396,7 @@ func (o *Observable[T]) Connect() {
 
 	go func() {
 		defer upstream.Close()
-		o.source(upstream, o.opts)
+		o.producer(upstream, o.opts)
 	}()
 
 	o.connected = true
@@ -471,7 +487,7 @@ func (o *Observable[T]) cloneOptions() observableOptions {
 	}
 }
 
-func applyOptions(opts *observableOptions, parents []parentObservable) {
+func applyOptions(opts *observableOptions, parents []upstreamObservable) {
 	ctxs := make([]context.Context, 0, len(parents))
 	defaults := newOptions()
 	// Certain settings need to be propagated from parent observable observableOptions to their child
@@ -492,8 +508,8 @@ func applyOptions(opts *observableOptions, parents []parentObservable) {
 	opts.ctx = utils.CombinedContexts(ctxs...)
 }
 
-func mapToParentObservable[T any](obs ...*Observable[T]) []parentObservable {
-	parents := make([]parentObservable, 0, len(obs))
+func mapToParentObservable[T any](obs ...*Observable[T]) []upstreamObservable {
+	parents := make([]upstreamObservable, 0, len(obs))
 	for _, o := range obs {
 		parents = append(parents, o)
 	}
