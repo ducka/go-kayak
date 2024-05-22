@@ -8,7 +8,7 @@ type (
 	PredicateFunc[T any] func(item T) bool
 )
 
-func Filter[T any](predicate PredicateFunc[T], opts ...observe.ObservableOption) OperatorFunc[T, T] {
+func Filter[T any](predicate PredicateFunc[T], opts ...observe.ObservableOption) observe.OperatorFunc[T, T] {
 	opts = defaultActivityName("Filter", opts)
 	return func(source *observe.Observable[T]) *observe.Observable[T] {
 		return observe.Operation[T, T](

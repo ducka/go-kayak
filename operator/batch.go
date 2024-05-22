@@ -8,19 +8,19 @@ import (
 )
 
 // Batch batches up Items from the observable into slices of the specified size.
-func Batch[T any](batchSize int, opts ...observe.ObservableOption) OperatorFunc[T, []T] {
+func Batch[T any](batchSize int, opts ...observe.ObservableOption) observe.OperatorFunc[T, []T] {
 	opts = defaultActivityName("Batch", opts)
 	return batch[T](batchSize, nil, opts...)
 }
 
 // BatchWithTimeout batches up Items from the observable into slices of the specified size. The flushTimeout ensures that
 // Items will be batched up and emitted after the specified duration has elapsed, regardless of whether the batch is complete.
-func BatchWithTimeout[T any](batchSize int, flushTimeout time.Duration, opts ...observe.ObservableOption) OperatorFunc[T, []T] {
+func BatchWithTimeout[T any](batchSize int, flushTimeout time.Duration, opts ...observe.ObservableOption) observe.OperatorFunc[T, []T] {
 	opts = defaultActivityName("BatchWithTimeout", opts)
 	return batch[T](batchSize, &flushTimeout, opts...)
 }
 
-func batch[T any](batchSize int, flushTimeout *time.Duration, opts ...observe.ObservableOption) OperatorFunc[T, []T] {
+func batch[T any](batchSize int, flushTimeout *time.Duration, opts ...observe.ObservableOption) observe.OperatorFunc[T, []T] {
 	autoFlush := true
 	maxFlushTimeout := time.Duration(math.MaxInt64)
 

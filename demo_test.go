@@ -16,7 +16,9 @@ func TestDemo(t *testing.T) {
 	wg := &sync.WaitGroup{}
 	wg.Add(1)
 
-	ob := operator.Pipe7(
+	observe.Cron("")
+
+	ob := observe.Pipe7(
 		observe.Range(0, 100, observe.WithActivityName("Observing kafka")),
 		operator.Filter[int](func(item int) bool {
 			// only emit even numbers
@@ -39,12 +41,12 @@ func TestDemo(t *testing.T) {
 
 	forked := observe.Fork(ob, 2)
 
-	pipe1 := operator.Pipe1(
+	pipe1 := observe.Pipe1(
 		forked[0],
 		operator.Print[string]("fork1:"),
 	)
 
-	pipe2 := operator.Pipe1(
+	pipe2 := observe.Pipe1(
 		forked[1],
 		operator.Print[string]("fork2:"),
 	)
@@ -84,7 +86,7 @@ func TestStageDemo(t *testing.T) {
 		},
 	)
 
-	sut := operator.Pipe1(
+	sut := observe.Pipe1(
 		observe.Stage10(
 			in1, in2, in3, observe.Empty[testInputItem](), observe.Empty[testInputItem](), observe.Empty[testInputItem](), observe.Empty[testInputItem](), observe.Empty[testInputItem](), observe.Empty[testInputItem](), observe.Empty[testInputItem](),
 			func(in1, in2, in3, in4, in5, in6, in7, in8, in9, in10 *testInputItem, out testOuputItem) (*testOuputItem, error) {

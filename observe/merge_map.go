@@ -330,7 +330,5 @@ func processMergeInput[TIn any, TOut any](input Notification[TIn], downstream St
 		return
 	}
 
-	if output != nil {
-		downstream.Write(output)
-	}
+	downstream.Write(output)
 }

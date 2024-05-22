@@ -273,10 +273,6 @@ func newStreamObservable[T any](parents []upstreamObservable, opts ...Observable
 		)
 }
 
-func newProducerObservable[T any](producer func(streamWriter StreamWriter[T], options observableOptions), parents []upstreamObservable, options ...ObservableOption) *Observable[T] {
-
-}
-
 func newObservable[T any](producer func(streamWriter StreamWriter[T], options observableOptions), parents []upstreamObservable, options ...ObservableOption) *Observable[T] {
 	opts := newOptions()
 

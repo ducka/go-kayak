@@ -9,7 +9,7 @@ type (
 )
 
 // Map transforms the Items emitted by an Observable by applying a function to each item.
-func Map[TIn any, TOut any](mapper MapFunc[TIn, TOut], opts ...observe.ObservableOption) OperatorFunc[TIn, TOut] {
+func Map[TIn, TOut any](mapper MapFunc[TIn, TOut], opts ...observe.ObservableOption) observe.OperatorFunc[TIn, TOut] {
 	if mapper == nil {
 		panic(`"Map" expected mapper func`)
 	}
