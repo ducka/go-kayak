@@ -6,6 +6,7 @@ import (
 
 	"github.com/ducka/go-kayak/observe"
 	"github.com/ducka/go-kayak/utils"
+	"github.com/redis/go-redis/v9"
 )
 
 type InputValue struct {
@@ -27,6 +28,10 @@ type StagedValue struct {
 }
 
 func TestStage(t *testing.T) {
+
+	rdb := redis.NewClusterClient(&redis.ClusterOptions{
+		Addrs: []string{":7001", ":7002", ":7003", ":7004", ":7005", ":7006"},
+	})
 
 	ob1 := observe.Array(
 		[]InputValue{
@@ -81,7 +86,7 @@ func TestStage(t *testing.T) {
 			}
 			return &state, nil
 		},
-		NewInMemoryStateStore[StagedValue](),
+		NewRedisStateStore[StagedValue](rdb),
 	)(merge)
 
 	for _, item := range staged.ToResult() {

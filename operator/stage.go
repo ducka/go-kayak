@@ -1,11 +1,13 @@
 package operator
 
 import (
+	"context"
+	"encoding/json"
 	"strings"
-	"sync"
 	"time"
 
 	"github.com/ducka/go-kayak/observe"
+	"github.com/redis/go-redis/v9"
 )
 
 type (
@@ -23,37 +25,38 @@ type Identifiable interface {
 	GetKey() []string
 }
 
-//type TestType struct {
-//}
-//
-//func (t TestType) GetKey() []string {
-//	return []string{"test"}
-//}
-//
-//func test() {
-//	Stage[TestType, TestType](DefaultSelector[TestType](), func(item TestType, state TestType) (*TestType, error) {
-//		return nil, nil
-//	})
-//}
+type upstreamItem[TItem any] struct {
+	Key  string
+	Item TItem
+}
 
-// TODO: You probably want to receive a key selector argument, for returning a key for each upstream item.
-// TODO: You'll also need a state mutator function
+type stateChange[TState any] struct {
+	State TState
+	Err   error
+}
 
 func Stage[TIn, TState any](keySelector KeySelectorFunc[TIn], stateMapper StateMapFunc[TIn, TState], stateStore StateStore[TState], opts ...observe.ObservableOption) observe.OperatorFunc[TIn, TState] {
 	opts = defaultActivityName("Stage", opts)
 	return func(source *observe.Observable[TIn]) *observe.Observable[TState] {
 
-		mapItems := func(items []TIn) ([]StateKey, map[StateKey]TIn) {
-			k := make([]StateKey, 0, len(items))
-			i := make(map[StateKey]TIn, len(items))
+		mapItems := func(items []TIn) (
+			[]string,
+			[]upstreamItem[TIn],
+		) {
+			distinctKeys := make(map[string]struct{}, len(items))
+			keys := make([]string, 0, len(items))
+			mappedItems := make([]upstreamItem[TIn], 0, len(items))
 
 			for _, item := range items {
-				key := StateKey(strings.Join(keySelector(item), ":"))
-				k = append(k, key)
-				i[key] = item
+				key := strings.Join(keySelector(item), ":")
+				if _, ok := distinctKeys[key]; !ok {
+					distinctKeys[key] = struct{}{}
+					keys = append(keys, key)
+				}
+				mappedItems = append(mappedItems, upstreamItem[TIn]{Key: key, Item: item})
 			}
 
-			return k, i
+			return keys, mappedItems
 		}
 
 		out := observe.Pipe2(
@@ -61,73 +64,72 @@ func Stage[TIn, TState any](keySelector KeySelectorFunc[TIn], stateMapper StateM
 			BatchWithTimeout[TIn](10, 50*time.Millisecond),
 			Process(func(ctx observe.Context, upstream observe.StreamReader[[]TIn], downstream observe.StreamWriter[TState]) {
 				for batch := range upstream.Read() {
-					// TODO: Get a distinct list of itemKeys, get the original list of items + extracted key
-					itemKeys, itemMap := mapItems(batch.Value())
+					distinctKeys, upstreamItems := mapItems(batch.Value())
 
-					tx := stateStore.CreatePipe()
-					defer tx.Close()
+					stateStore.Transaction(ctx, distinctKeys, func(tx Transaction[TState]) error {
+						getCmds := tx.Get(ctx, distinctKeys...)
 
-					// Retrieve state for the item keys
-					tx.Lock(itemKeys...)
+						err := tx.Execute(ctx)
 
-					// TODO: load the state returned from the store into a key value map
-					stateEntries := tx.Get(itemKeys...)
-					err := tx.Execute()
-
-					if err != nil {
-						// TODO: what to do...
-					}
-
-					stateMapperResults := make([]struct {
-						state TState
-						err   error
-					}, 0, len(itemKeys))
-
-					// TODO: Loop over your itemList + extracted keys
-					for _, e := range stateEntries {
-						entry := e.Result()
-						state := entry.State
-
-						if state == nil {
-							state = new(TState)
+						if err != nil {
+							// ??
 						}
 
-						// TODO: Pass your item + state to the mapper.
-						state, err := stateMapper(itemMap[entry.Key], *state)
+						activeState := make(map[string]*TState, len(getCmds))
+						stateOverTime := make([]stateChange[TState], 0, len(upstreamItems))
 
-						if state == nil {
-							tx.Delete(entry.Key)
-							continue
+						// Read the state retrieved from redis
+						for k, v := range getCmds {
+							state, err := v.Result()
+
+							if err != nil {
+								// ??
+							}
+
+							if state == nil {
+								state = new(TState)
+							}
+
+							activeState[k] = state
 						}
 
-						stateMapperResults = append(
-							stateMapperResults,
-							struct {
-								state TState
-								err   error
-							}{*state, err},
-						)
+						// Iterate over the upstream items and apply it to the retrieved state
+						for _, upstreamItem := range upstreamItems {
+							state := activeState[upstreamItem.Key]
 
-						tx.Set(StateEntry[TState]{
-							Key:   entry.Key,
-							State: state,
-						})
-					}
+							state, err = stateMapper(upstreamItem.Item, *state)
 
-					err = tx.Execute()
+							if err == nil {
+								// ??
+							}
 
-					if err != nil {
-						// What to do....
-					}
+							if state == nil {
+								tx.Delete(ctx, upstreamItem.Key)
+								delete(activeState, upstreamItem.Key)
+							}
 
-					for _, result := range stateMapperResults {
-						if result.err != nil {
-							downstream.Error(result.err)
-							continue
+							activeState[upstreamItem.Key] = state
+							stateOverTime = append(stateOverTime, stateChange[TState]{State: *state, Err: err})
 						}
 
-						downstream.Write(result.state)
-					}
+						// Save the active state back to redis
+						for k, v := range activeState {
+							tx.Set(ctx, StateEntry[TState]{Key: k, State: v})
+						}
+
+						err = tx.Execute(ctx)
+
+						if err != nil {
+							// ??
+						}
+
+						// Emit the state changes over time downstream
+						for _, state := range stateOverTime {
+							downstream.Write(state.State)
+						}
+
+						return nil
+					})
 				}
 			}, opts...),
 		)
@@ -136,95 +138,171 @@ func Stage[TIn, TState any](keySelector KeySelectorFunc[TIn], stateMapper StateM
 	}
 }
 
-type StateKey string
-
-type StateEntry[T any] struct {
-	Key   StateKey
-	State *T
+type StateEntry[TState any] struct {
+	Key    string
+	State  *TState
+	Expiry *time.Duration
 }
 
-type StateStoreResults struct {
+type JsonMarshaller[T any] struct {
+}
+
+func (j JsonMarshaller[T]) Serialize(t T) string {
+	bytes, _ := json.Marshal(t)
+	return string(bytes)
+}
+
+func (j JsonMarshaller[T]) Deserialize(s string) T {
+	var t T
+	json.Unmarshal([]byte(s), &t)
+	return t
 }
 
 type StateStore[TState any] interface {
-	CreatePipe() StateStorePipe[TState]
+	Transaction(ctx context.Context, keys []string, callback func(tx Transaction[TState]) error) error
 }
 
-type StateStoreGetCmd[TState any] struct {
-	key   StateKey
-	state *TState
-}
-
-func (s StateStoreGetCmd[TState]) Result() *StateEntry[TState] {
-	return &StateEntry[TState]{
-		Key:   s.key,
-		State: s.state,
+func NewRedisStateStore[TState any](client redis.UniversalClient) *RedisStateStore[TState] {
+	return &RedisStateStore[TState]{
+		client:  client,
+		marshal: &JsonMarshaller[TState]{},
 	}
 }
 
-type StateStorePipe[TState any] interface {
-	Lock(keys ...StateKey)
-	Get(keys ...StateKey) []StateStoreGetCmd[TState]
-	Set(entries ...StateEntry[TState])
-	Delete(keys ...StateKey)
-	Execute() error
-	Close()
+// TODO: You've got an issue with using Watch on a clustered client. Each key may be stored on a different cluster node,
+// and you cant execute watch across multple nodes with the same client.
+type RedisStateStore[TState any] struct {
+	client  redis.UniversalClient
+	marshal Marshaller[TState]
 }
 
-func NewInMemoryStateStore[TState any]() *InMemoryStateStore[TState] {
-	return &InMemoryStateStore[TState]{}
-}
+func (r *RedisStateStore[TState]) Transaction(ctx context.Context, keys []string, callback func(tx Transaction[TState]) error) error {
+	//_, err := r.client.Pipelined(ctx, func(pipe redis.Pipeliner) error {
+	//	tx := &RedisTransaction[TState]{
+	//		pipe:    pipe,
+	//		marshal: r.marshal,
+	//	}
+	//
+	//	return callback(tx)
+	//})
+	//
+	//return err
 
-type InMemoryStateStore[TState any] struct {
-}
+	return r.client.Watch(ctx, func(tx *redis.Tx) error {
+		pipe := tx.TxPipeline()
 
-func (s *InMemoryStateStore[TState]) CreatePipe() StateStorePipe[TState] {
-	return NewInMemoryStateStorePipe[TState]()
-}
-
-func NewInMemoryStateStorePipe[TState any]() *InMemoryStateStorePipe[TState] {
-	return &InMemoryStateStorePipe[TState]{
-		store: make(map[StateKey]*TState),
-		mu:    new(sync.Mutex),
-	}
-}
-
-type InMemoryStateStorePipe[TState any] struct {
-	store map[StateKey]*TState
-	mu    *sync.Mutex
-}
-
-func (i InMemoryStateStorePipe[TState]) Lock(keys ...StateKey) {
-	i.mu.Lock()
-}
-
-func (i InMemoryStateStorePipe[TState]) Get(keys ...StateKey) []StateStoreGetCmd[TState] {
-	results := make([]StateStoreGetCmd[TState], 0, len(keys))
-	for _, k := range keys {
-		results = append(results, StateStoreGetCmd[TState]{
-			key:   k,
-			state: i.store[k],
+		return callback(&RedisTransaction[TState]{
+			pipe:    pipe,
+			marshal: r.marshal,
 		})
+	}, keys...)
+}
+
+type Transaction[TState any] interface {
+	Get(ctx context.Context, keys ...string) map[string]GetCmd[TState]
+	Set(ctx context.Context, entries ...StateEntry[TState]) map[string]SetCmd
+	Delete(ctx context.Context, keys ...string) map[string]DeleteCmd
+	Execute(ctx context.Context) error
+}
+
+type RedisTransaction[TState any] struct {
+	pipe    redis.Pipeliner
+	marshal Marshaller[TState]
+}
+
+func (r *RedisTransaction[TState]) Get(ctx context.Context, keys ...string) map[string]GetCmd[TState] {
+	results := make(map[string]GetCmd[TState])
+	for _, key := range keys {
+		results[key] = &RedisGetCmd[TState]{
+			cmd:     r.pipe.Get(ctx, key),
+			marshal: r.marshal,
+		}
 	}
 	return results
 }
 
-func (i InMemoryStateStorePipe[TState]) Set(entries ...StateEntry[TState]) {
-	for _, k := range entries {
-		i.store[k.Key] = k.State
+func (r *RedisTransaction[TState]) Set(ctx context.Context, entries ...StateEntry[TState]) map[string]SetCmd {
+	results := make(map[string]SetCmd)
+
+	for _, entry := range entries {
+		serializedState := r.marshal.Serialize(*entry.State)
+
+		if entry.Expiry != nil {
+			results[entry.Key] = &RedisSetCmd{
+				cmd: r.pipe.Set(ctx, entry.Key, serializedState, *entry.Expiry),
+			}
+			continue
+		}
+
+		results[entry.Key] = &RedisSetCmd{
+			cmd: r.pipe.Set(ctx, entry.Key, serializedState, 0),
+		}
 	}
+
+	return results
 }
 
-func (i InMemoryStateStorePipe[TState]) Delete(keys ...StateKey) {
-	for _, k := range keys {
-		delete(i.store, k)
+func (r *RedisTransaction[TState]) Delete(ctx context.Context, keys ...string) map[string]DeleteCmd {
+	results := make(map[string]DeleteCmd)
+	for _, key := range keys {
+		results[key] = &RedisDeleteCmd{
+			cmd: r.pipe.Del(ctx, key),
+		}
 	}
+	return results
 }
 
-func (i InMemoryStateStorePipe[TState]) Execute() error {
-	return nil
+func (r *RedisTransaction[TState]) Execute(ctx context.Context) error {
+	_, err := r.pipe.Exec(ctx)
+	return err
 }
 
-func (i InMemoryStateStorePipe[TState]) Close() {
-	i.mu.Unlock()
+type GetCmd[TState any] interface {
+	Result() (*TState, error)
+}
+
+type RedisGetCmd[TState any] struct {
+	cmd     *redis.StringCmd
+	marshal Marshaller[TState]
+}
+
+func (c *RedisGetCmd[TState]) Result() (*TState, error) {
+	if c.cmd.Err() == redis.Nil {
+		return nil, nil
+	} else if c.cmd.Err() != nil {
+		return nil, c.cmd.Err()
+	}
+
+	result := c.marshal.Deserialize(c.cmd.Val())
+
+	return &result, nil
+}
+
+type SetCmd interface {
+	Err() error
+}
+
+type RedisSetCmd struct {
+	cmd *redis.StatusCmd
+}
+
+func (c *RedisSetCmd) Err() error {
+	return c.cmd.Err()
+}
+
+type DeleteCmd interface {
+	Err() error
+}
+
+type RedisDeleteCmd struct {
+	cmd *redis.IntCmd
+}
+
+func (c *RedisDeleteCmd) Err() error {
+	return c.cmd.Err()
+}
+
+type Marshaller[T any] interface {
+	Serialize(T) string
+	Deserialize(string) T
 }

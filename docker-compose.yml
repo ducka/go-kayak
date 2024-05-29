@@ -1,0 +1,15 @@
+services:
+  redis:
+    image: docker.io/grokzen/redis-cluster:6.2.11
+    container_name: gokayak-redis
+    networks:
+      - db-network
+    environment:
+      IP: '0.0.0.0'
+      INITIAL_PORT: 7001
+      MASTERS: 3
+      SLAVES_PER_MASTER: 1
+    ports:
+      - '7001-7006:7001-7006'
+networks:
+  db-network:
