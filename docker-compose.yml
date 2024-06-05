@@ -1,15 +1,18 @@
 services:
   redis:
-    image: docker.io/grokzen/redis-cluster:6.2.11
+    image: redis/redis-stack-server:latest
     container_name: gokayak-redis
     networks:
       - db-network
-    environment:
-      IP: '0.0.0.0'
-      INITIAL_PORT: 7001
-      MASTERS: 3
-      SLAVES_PER_MASTER: 1
     ports:
-      - '7001-7006:7001-7006'
+      - '6379:6379'
+  dynamodb:
+      image: amazon/dynamodb-local:latest
+      container_name: gokayak-dynamodb
+      networks:
+        - db-network
+      ports:
+        - '8123:8000'
 networks:
   db-network:
+

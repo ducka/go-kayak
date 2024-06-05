@@ -3,6 +3,7 @@ package operator
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"strings"
 	"time"
 
@@ -35,8 +36,14 @@ type stateChange[TState any] struct {
 	Err   error
 }
 
+type stateEnvelope[TState any] struct {
+	State     TState
+	Timestamp int64
+}
+
 func Stage[TIn, TState any](keySelector KeySelectorFunc[TIn], stateMapper StateMapFunc[TIn, TState], stateStore StateStore[TState], opts ...observe.ObservableOption) observe.OperatorFunc[TIn, TState] {
 	opts = defaultActivityName("Stage", opts)
+
 	return func(source *observe.Observable[TIn]) *observe.Observable[TState] {
 
 		mapItems := func(items []TIn) (
@@ -63,17 +70,24 @@ func Stage[TIn, TState any](keySelector KeySelectorFunc[TIn], stateMapper StateM
 			source,
 			BatchWithTimeout[TIn](10, 50*time.Millisecond),
 			Process(func(ctx observe.Context, upstream observe.StreamReader[[]TIn], downstream observe.StreamWriter[TState]) {
-				for batch := range upstream.Read() {
-					distinctKeys, upstreamItems := mapItems(batch.Value())
 
-					stateStore.Transaction(ctx, distinctKeys, func(tx Transaction[TState]) error {
+				for batch := range upstream.Read() {
+					if batch.IsError() {
+						downstream.Error(batch.Error())
+						continue
+					}
+
+					var distinctKeys, upstreamItems = mapItems(batch.Value())
+
+					// TODO: handle error...
+					err := stateStore.Transaction(ctx, distinctKeys, func(tx Transaction[TState]) error {
 						getCmds := tx.Get(ctx, distinctKeys...)
 
 						err := tx.Execute(ctx)
 
-						if err != nil {
-							// ??
-						}
+						//if err != nil {
+						//	return err
+						//}
 
 						activeState := make(map[string]*TState, len(getCmds))
 						stateOverTime := make([]stateChange[TState], 0, len(upstreamItems))
@@ -83,7 +97,7 @@ func Stage[TIn, TState any](keySelector KeySelectorFunc[TIn], stateMapper StateM
 							state, err := v.Result()
 
 							if err != nil {
-								// ??
+								return err
 							}
 
 							if state == nil {
@@ -99,8 +113,8 @@ func Stage[TIn, TState any](keySelector KeySelectorFunc[TIn], stateMapper StateM
 
 							state, err = stateMapper(upstreamItem.Item, *state)
 
-							if err == nil {
-								// ??
+							if err != nil {
+								return err
 							}
 
 							if state == nil {
@@ -120,7 +134,7 @@ func Stage[TIn, TState any](keySelector KeySelectorFunc[TIn], stateMapper StateM
 						err = tx.Execute(ctx)
 
 						if err != nil {
-							// ??
+							return err
 						}
 
 						// Emit the state changes over time downstream
@@ -130,7 +144,13 @@ func Stage[TIn, TState any](keySelector KeySelectorFunc[TIn], stateMapper StateM
 
 						return nil
 					})
+
+					if err != nil {
+						fmt.Println(err)
+
+					}
 				}
+
 			}, opts...),
 		)
 
@@ -138,10 +158,53 @@ func Stage[TIn, TState any](keySelector KeySelectorFunc[TIn], stateMapper StateM
 	}
 }
 
+type (
+	RetryApproach string
+)
+
+const (
+	DontRetry   RetryApproach = "DontRetry"
+	RandomRetry RetryApproach = "LinearRetry"
+	ReduceBatch RetryApproach = "ReduceBatch"
+)
+
+type RetryProcessor[TItem any] func(ctx observe.Context, batch []TItem) error
+
+type RetryStrategy[TItem any] interface {
+	Process(ctx observe.Context, batch []TItem, processor RetryProcessor[TItem]) error
+	ShouldRetry(err error) bool
+}
+
+type DefaultRetryStrategy[TItem any] struct {
+}
+
+func (d *DefaultRetryStrategy[TItem]) Process(ctx observe.Context, batch []TItem, processor RetryProcessor[TItem]) error {
+	//err := processor(ctx, batch)
+
+	return nil
+}
+
+func (d *DefaultRetryStrategy[TItem]) shouldRetry(err error) RetryApproach {
+	return DontRetry
+}
+
+var ConcurrencyError error = concurrencyError{}
+
+type concurrencyError struct{}
+
+func (c concurrencyError) Error() string {
+	return "State entry was modified concurrently"
+}
+
 type StateEntry[TState any] struct {
 	Key    string
 	State  *TState
 	Expiry *time.Duration
+}
+
+type Marshaller[T any] interface {
+	Serialize(T) string
+	Deserialize(string) T
 }
 
 type JsonMarshaller[T any] struct {
@@ -162,32 +225,43 @@ type StateStore[TState any] interface {
 	Transaction(ctx context.Context, keys []string, callback func(tx Transaction[TState]) error) error
 }
 
-func NewRedisStateStore[TState any](client redis.UniversalClient) *RedisStateStore[TState] {
+type Transaction[TState any] interface {
+	Get(ctx context.Context, keys ...string) map[string]GetCmd[TState]
+	Set(ctx context.Context, entries ...StateEntry[TState]) map[string]SetCmd
+	Delete(ctx context.Context, keys ...string) map[string]DeleteCmd
+	Execute(ctx context.Context) error
+}
+
+type SetCmd interface {
+	Err() error
+}
+
+type DeleteCmd interface {
+	Err() error
+}
+
+type GetCmd[TState any] interface {
+	Result() (*TState, error)
+}
+
+// Redis State Store
+
+func NewRedisStateStore[TState any](client *redis.Client) *RedisStateStore[TState] {
+	if client == nil {
+		panic("Argument 'client' must be specified")
+	}
 	return &RedisStateStore[TState]{
 		client:  client,
 		marshal: &JsonMarshaller[TState]{},
 	}
 }
 
-// TODO: You've got an issue with using Watch on a clustered client. Each key may be stored on a different cluster node,
-// and you cant execute watch across multple nodes with the same client.
 type RedisStateStore[TState any] struct {
-	client  redis.UniversalClient
+	client  *redis.Client
 	marshal Marshaller[TState]
 }
 
 func (r *RedisStateStore[TState]) Transaction(ctx context.Context, keys []string, callback func(tx Transaction[TState]) error) error {
-	//_, err := r.client.Pipelined(ctx, func(pipe redis.Pipeliner) error {
-	//	tx := &RedisTransaction[TState]{
-	//		pipe:    pipe,
-	//		marshal: r.marshal,
-	//	}
-	//
-	//	return callback(tx)
-	//})
-	//
-	//return err
-
 	return r.client.Watch(ctx, func(tx *redis.Tx) error {
 		pipe := tx.TxPipeline()
 
@@ -196,13 +270,6 @@ func (r *RedisStateStore[TState]) Transaction(ctx context.Context, keys []string
 			marshal: r.marshal,
 		})
 	}, keys...)
-}
-
-type Transaction[TState any] interface {
-	Get(ctx context.Context, keys ...string) map[string]GetCmd[TState]
-	Set(ctx context.Context, entries ...StateEntry[TState]) map[string]SetCmd
-	Delete(ctx context.Context, keys ...string) map[string]DeleteCmd
-	Execute(ctx context.Context) error
 }
 
 type RedisTransaction[TState any] struct {
@@ -257,10 +324,6 @@ func (r *RedisTransaction[TState]) Execute(ctx context.Context) error {
 	return err
 }
 
-type GetCmd[TState any] interface {
-	Result() (*TState, error)
-}
-
 type RedisGetCmd[TState any] struct {
 	cmd     *redis.StringCmd
 	marshal Marshaller[TState]
@@ -278,10 +341,6 @@ func (c *RedisGetCmd[TState]) Result() (*TState, error) {
 	return &result, nil
 }
 
-type SetCmd interface {
-	Err() error
-}
-
 type RedisSetCmd struct {
 	cmd *redis.StatusCmd
 }
@@ -290,19 +349,10 @@ func (c *RedisSetCmd) Err() error {
 	return c.cmd.Err()
 }
 
-type DeleteCmd interface {
-	Err() error
-}
-
 type RedisDeleteCmd struct {
 	cmd *redis.IntCmd
 }
 
 func (c *RedisDeleteCmd) Err() error {
 	return c.cmd.Err()
-}
-
-type Marshaller[T any] interface {
-	Serialize(T) string
-	Deserialize(string) T
 }

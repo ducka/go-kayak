@@ -1,7 +1,9 @@
 package operator
 
 import (
+	"context"
 	"fmt"
+	"net"
 	"testing"
 
 	"github.com/ducka/go-kayak/observe"
@@ -27,11 +29,36 @@ type StagedValue struct {
 	Value3 string
 }
 
+type hook struct {
+}
+
+func (h hook) DialHook(next redis.DialHook) redis.DialHook {
+	return func(ctx context.Context, network, addr string) (net.Conn, error) {
+		return next(ctx, network, addr)
+	}
+}
+
+func (h hook) ProcessHook(next redis.ProcessHook) redis.ProcessHook {
+	return func(ctx context.Context, cmds redis.Cmder) error {
+		fmt.Println("REDIS: ", cmds)
+		return next(ctx, cmds)
+	}
+}
+
+func (h hook) ProcessPipelineHook(next redis.ProcessPipelineHook) redis.ProcessPipelineHook {
+	return func(ctx context.Context, cmds []redis.Cmder) error {
+		fmt.Println("REDIS: ", cmds)
+		return next(ctx, cmds)
+	}
+}
+
 func TestStage(t *testing.T) {
 
-	rdb := redis.NewClusterClient(&redis.ClusterOptions{
-		Addrs: []string{":7001", ":7002", ":7003", ":7004", ":7005", ":7006"},
+	rdb := redis.NewClient(&redis.Options{
+		Addr: ":6379",
 	})
+
+	rdb.AddHook(hook{})
 
 	ob1 := observe.Array(
 		[]InputValue{
