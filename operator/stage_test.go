@@ -103,12 +103,15 @@ func TestStage(t *testing.T) {
 			return []string{in.Key}
 		}, func(value MergeValue, state StagedValue) (*StagedValue, error) {
 			if value.In1 != nil {
+				state.Key = value.In1.Key
 				state.Value1 = value.In1.Value
 			}
 			if value.In2 != nil {
+				state.Key = value.In2.Key
 				state.Value2 = value.In2.Value
 			}
 			if value.In3 != nil {
+				state.Key = value.In3.Key
 				state.Value3 = value.In3.Value
 			}
 			return &state, nil
