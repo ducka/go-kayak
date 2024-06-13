@@ -1,10 +1,10 @@
-package observe
+package stream
 
 import (
 	"sync"
 )
 
-type StreamWriter[T any] interface {
+type Writer[T any] interface {
 	Write(value T)
 	Error(err error)
 	Send(notification Notification[T])
@@ -12,10 +12,10 @@ type StreamWriter[T any] interface {
 	Close()
 }
 
-type StreamReader[T any] interface {
+type Reader[T any] interface {
 	Read() <-chan Notification[T]
 }
-type stream[T any] struct {
+type Stream[T any] struct {
 	// to prevent DATA RACE
 	mu *sync.RWMutex
 
@@ -26,43 +26,43 @@ type stream[T any] struct {
 	closed bool
 }
 
-func newStream[T any](bufferCount ...uint64) *stream[T] {
+func NewStream[T any](bufferCount ...uint64) *Stream[T] {
 	ch := make(chan Notification[T])
 	if len(bufferCount) > 0 {
 		ch = make(chan Notification[T], bufferCount[0])
 	}
-	return &stream[T]{
+	return &Stream[T]{
 		mu: new(sync.RWMutex),
 		ch: ch,
 	}
 }
 
 // Next will return the channel to receive the downstream data
-func (s *stream[T]) Read() <-chan Notification[T] {
+func (s *Stream[T]) Read() <-chan Notification[T] {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 	return s.ch
 }
 
-func (s *stream[T]) Write(value T) {
+func (s *Stream[T]) Write(value T) {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 	s.send() <- Next[T](value)
 }
 
-func (s *stream[T]) Error(err error) {
+func (s *Stream[T]) Error(err error) {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 	s.send() <- Error[T](err)
 }
 
-func (s *stream[T]) Send(notification Notification[T]) {
+func (s *Stream[T]) Send(notification Notification[T]) {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 	s.ch <- notification
 }
 
-func (s *stream[T]) TrySend(notification Notification[T]) bool {
+func (s *Stream[T]) TrySend(notification Notification[T]) bool {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 	select {
@@ -73,11 +73,11 @@ func (s *stream[T]) TrySend(notification Notification[T]) bool {
 	}
 }
 
-func (s *stream[T]) send() chan<- Notification[T] {
+func (s *Stream[T]) send() chan<- Notification[T] {
 	return s.ch
 }
 
-func (s *stream[T]) Close() {
+func (s *Stream[T]) Close() {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	if s.closed {

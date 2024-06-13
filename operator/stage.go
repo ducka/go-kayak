@@ -7,7 +7,10 @@ import (
 	"strings"
 	"time"
 
+	"github.com/avast/retry-go/v4"
 	"github.com/ducka/go-kayak/observe"
+	"github.com/ducka/go-kayak/stream"
+	"github.com/ducka/go-kayak/utils"
 	"github.com/redis/go-redis/v9"
 )
 
@@ -26,7 +29,7 @@ type Identifiable interface {
 	GetKey() []string
 }
 
-type upstreamItem[TItem any] struct {
+type itemWithKey[TItem any] struct {
 	Key  string
 	Item TItem
 }
@@ -36,127 +39,101 @@ type stateChange[TState any] struct {
 	Err   error
 }
 
-func Stage[TIn, TState any](keySelector KeySelectorFunc[TIn], stateMapper StateMapFunc[TIn, TState], stateStore StateStore[TState], opts ...observe.ObservableOption) observe.OperatorFunc[TIn, TState] {
+func Stage[TIn, TOut any](keySelector KeySelectorFunc[TIn], stateMapper StateMapFunc[TIn, TOut], stateStore StateStore[TOut], opts ...observe.ObservableOption) observe.OperatorFunc[TIn, TOut] {
 	opts = defaultActivityName("Stage", opts)
 
-	return func(source *observe.Observable[TIn]) *observe.Observable[TState] {
+	return func(source *observe.Observable[TIn]) *observe.Observable[TOut] {
 
-		mapItems := func(items []TIn) (
-			[]string,
-			[]upstreamItem[TIn],
-		) {
-			distinctKeys := make(map[string]struct{}, len(items))
-			keys := make([]string, 0, len(items))
-			mappedItems := make([]upstreamItem[TIn], 0, len(items))
+		return observe.Operation[TIn, TOut](
+			source,
+			func(ctx observe.Context, upstream stream.Reader[TIn], downstream stream.Writer[TOut]) {
+				batcher := newBatcher[TIn](10, utils.ToPtr(time.Millisecond*200))
+				stager := newStager[TIn, TOut](keySelector, stateMapper, stateStore)
 
-			for _, item := range items {
-				key := strings.Join(keySelector(item), ":")
-				if _, ok := distinctKeys[key]; !ok {
-					distinctKeys[key] = struct{}{}
-					keys = append(keys, key)
-				}
-				mappedItems = append(mappedItems, upstreamItem[TIn]{Key: key, Item: item})
-			}
+				batchStream := stream.NewStream[[]TIn]()
+				batcher(ctx, upstream, batchStream)
+				stager(ctx, batchStream, downstream)
 
-			return keys, mappedItems
-		}
+			},
+			opts...,
+		)
 
 		// TODO:
 		// 1) You're going to need to do your own form of batching here, instead of relying off a pipeline activity.
 		// 2) How are you going to handle retries? How are you going to handle different types of errors?
 		// 3) Does the concurrency error really need to return state entries, or should it just return keys? It would be better if it returned keys.
 		// 4) Could it be possible to simply feed retried entries back into the pipeline, instead of retrying an entire batch?
-		out := observe.Pipe2(
-			source,
-			BatchWithTimeout[TIn](10, 50*time.Millisecond),
-			Process(func(ctx observe.Context, upstream observe.StreamReader[[]TIn], downstream observe.StreamWriter[TState]) {
 
-				for batch := range upstream.Read() {
-					if batch.IsError() {
-						downstream.Error(batch.Error())
-						continue
-					}
-
-					var distinctKeys, upstreamItems = mapItems(batch.Value())
-
-					stateEntries, err := stateStore.Get(ctx, distinctKeys...)
-
-					if err != nil {
-						// ??
-					}
-
-					for _, upstreamItem := range upstreamItems {
-						stateEntry := stateEntries[upstreamItem.Key]
-						state := stateEntry.State
-
-						if state == nil {
-							state = new(TState)
-						}
-
-						state, err = stateMapper(upstreamItem.Item, *state)
-
-						if err != nil {
-							// ??
-						}
-
-						stateEntry.State = state
-						stateEntries[upstreamItem.Key] = stateEntry
-					}
-
-					err = stateStore.Set(ctx, stateEntries)
-
-					conflicts := make(map[string]StateEntry[TState])
-
-					if conflictsErr, ok := err.(StateStoreConflict[TState]); ok {
-						conflicts = conflictsErr.GetConflicts()
-					} else if err != nil {
-						// ??
-					}
-
-					for _, stateEntry := range stateEntries {
-						if _, found := conflicts[stateEntry.Key]; found {
-							downstream.Error(fmt.Errorf("State entry was modified concurrently"))
-						} else {
-							downstream.Write(*stateEntry.State)
-						}
-					}
-				}
-
-			}, opts...),
-		)
-
-		return out
 	}
 }
 
-type (
-	RetryApproach string
-)
+func newStager[TIn, TOut any](keySelector KeySelectorFunc[TIn], stateMapper StateMapFunc[TIn, TOut], stateStore StateStore[TOut]) observe.OperationFunc[[]TIn, TOut] {
+	mapItems := func(items []TIn) (
+		[]string,
+		[]itemWithKey[TIn],
+	) {
+		distinctKeys := make(map[string]struct{}, len(items))
+		keys := make([]string, 0, len(items))
+		mappedItems := make([]itemWithKey[TIn], 0, len(items))
 
-const (
-	DontRetry   RetryApproach = "DontRetry"
-	RandomRetry RetryApproach = "LinearRetry"
-	ReduceBatch RetryApproach = "ReduceBatch"
-)
+		for _, item := range items {
+			key := strings.Join(keySelector(item), ":")
+			if _, ok := distinctKeys[key]; !ok {
+				distinctKeys[key] = struct{}{}
+				keys = append(keys, key)
+			}
+			mappedItems = append(mappedItems, itemWithKey[TIn]{Key: key, Item: item})
+		}
 
-type RetryProcessor[TItem any] func(ctx observe.Context, batch []TItem) error
+		return keys, mappedItems
+	}
 
-type RetryStrategy[TItem any] interface {
-	Process(ctx observe.Context, batch []TItem, processor RetryProcessor[TItem]) error
-	ShouldRetry(err error) bool
-}
+	return func(ctx observe.Context, upstream stream.Reader[[]TIn], downstream stream.Writer[TOut]) {
+		for batch := range upstream.Read() {
+			if batch.IsError() {
+				downstream.Error(batch.Error())
+				continue
+			}
 
-type DefaultRetryStrategy[TItem any] struct {
-}
+			var distinctKeys, upstreamItems = mapItems(batch.Value())
 
-func (d *DefaultRetryStrategy[TItem]) Process(ctx observe.Context, batch []TItem, processor RetryProcessor[TItem]) error {
-	//err := processor(ctx, batch)
+			result, err := retry.DoWithData[map[string]StateEntry[TOut]](func() (map[string]StateEntry[TOut], error) {
+				stateEntries, err := stateStore.Get(ctx, distinctKeys...)
 
-	return nil
-}
+				if err != nil {
+					return nil, err
+				}
 
-func (d *DefaultRetryStrategy[TItem]) shouldRetry(err error) RetryApproach {
-	return DontRetry
+				for _, upstreamItem := range upstreamItems {
+					stateEntry := stateEntries[upstreamItem.Key]
+					state := stateEntry.State
+
+					if state == nil {
+						state = new(TOut)
+					}
+
+					state, err = stateMapper(upstreamItem.Item, *state)
+
+					if err != nil {
+						return nil, err
+					}
+
+					stateEntry.State = state
+					stateEntries[upstreamItem.Key] = stateEntry
+				}
+
+				err = stateStore.Set(ctx, stateEntries)
+
+				// TODO: In the case of error, we need to return the state entries here along with the conflicts. On the outside
+				// of the retry policy we pass successful items on down stream, and register the conflicts as errors.
+
+				return stateEntries, err
+			})
+
+			fmt.Println(result, err)
+
+		}
+	}
 }
 
 type StateEntry[TState any] struct {

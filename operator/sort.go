@@ -4,6 +4,7 @@ import (
 	"sort"
 
 	"github.com/ducka/go-kayak/observe"
+	"github.com/ducka/go-kayak/stream"
 )
 
 type (
@@ -15,9 +16,9 @@ func Sort[T any](comparer SorterFunc[T], opts ...observe.ObservableOption) obser
 	return func(source *observe.Observable[T]) *observe.Observable[T] {
 		return observe.Operation[T, T](
 			source,
-			func(ctx observe.Context, upstream observe.StreamReader[T], downstream observe.StreamWriter[T]) {
-				sorted := make([]observe.Notification[T], 0)
-				unsorted := make([]observe.Notification[T], 0)
+			func(ctx observe.Context, upstream stream.Reader[T], downstream stream.Writer[T]) {
+				sorted := make([]stream.Notification[T], 0)
+				unsorted := make([]stream.Notification[T], 0)
 
 				// Read the Items into the buffer, in preparation for a sort.
 				for i := range upstream.Read() {

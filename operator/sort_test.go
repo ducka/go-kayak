@@ -5,12 +5,13 @@ import (
 	"testing"
 
 	"github.com/ducka/go-kayak/observe"
+	"github.com/ducka/go-kayak/stream"
 	"github.com/stretchr/testify/assert"
 )
 
 func TestSort(t *testing.T) {
 	t.Run("When emitting an unordered sequence including errors", func(t *testing.T) {
-		ob := observe.Producer(func(downstream observe.StreamWriter[int]) {
+		ob := observe.Producer(func(downstream stream.Writer[int]) {
 			downstream.Write(4)
 			downstream.Write(2)
 			downstream.Error(errors.New("error1"))
@@ -28,13 +29,13 @@ func TestSort(t *testing.T) {
 
 			t.Run("Then the sequence should be sorted with errors with no values at the end", func(t *testing.T) {
 				assert.Equal(t,
-					[]observe.Notification[int]{
-						observe.Next(1),
-						observe.Next(2),
-						observe.Next(4),
-						observe.Next(5),
-						observe.Error[int](errors.New("error1")),
-						observe.Error[int](errors.New("error2")),
+					[]stream.Notification[int]{
+						stream.Next(1),
+						stream.Next(2),
+						stream.Next(4),
+						stream.Next(5),
+						stream.Error[int](errors.New("error1")),
+						stream.Error[int](errors.New("error2")),
 					},
 					actual,
 				)

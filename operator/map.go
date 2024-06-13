@@ -2,6 +2,7 @@ package operator
 
 import (
 	"github.com/ducka/go-kayak/observe"
+	"github.com/ducka/go-kayak/stream"
 )
 
 type (
@@ -19,10 +20,10 @@ func Map[TIn, TOut any](mapper MapFunc[TIn, TOut], opts ...observe.ObservableOpt
 
 		return observe.Operation[TIn, TOut](
 			source,
-			func(ctx observe.Context, upstream observe.StreamReader[TIn], downstream observe.StreamWriter[TOut]) {
+			func(ctx observe.Context, upstream stream.Reader[TIn], downstream stream.Writer[TOut]) {
 				for item := range upstream.Read() {
 					switch item.Kind() {
-					case observe.NextKind:
+					case stream.NextKind:
 						output, err := mapper(item.Value(), index)
 						index++
 
@@ -32,7 +33,7 @@ func Map[TIn, TOut any](mapper MapFunc[TIn, TOut], opts ...observe.ObservableOpt
 						}
 
 						downstream.Write(output)
-					case observe.ErrorKind:
+					case stream.ErrorKind:
 						downstream.Error(item.Error())
 					}
 				}

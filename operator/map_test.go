@@ -6,6 +6,7 @@ import (
 	"testing"
 
 	"github.com/ducka/go-kayak/observe"
+	"github.com/ducka/go-kayak/stream"
 	"github.com/stretchr/testify/assert"
 )
 
@@ -22,10 +23,10 @@ func TestMap(t *testing.T) {
 
 			t.Run("Then the emitted integers should now be strings", func(t *testing.T) {
 				assert.EqualValues(t,
-					[]observe.Notification[string]{
-						observe.Next("1"),
-						observe.Next("2"),
-						observe.Next("3"),
+					[]stream.Notification[string]{
+						stream.Next("1"),
+						stream.Next("2"),
+						stream.Next("3"),
 					},
 					m.ToResult(),
 				)
@@ -49,10 +50,10 @@ func TestMap(t *testing.T) {
 
 			t.Run("Then the emitted notifications should be a mixture of strings and errors", func(t *testing.T) {
 				assert.EqualValues(t,
-					[]observe.Notification[string]{
-						observe.Next("1"),
-						observe.Error[string](err),
-						observe.Next("3"),
+					[]stream.Notification[string]{
+						stream.Next("1"),
+						stream.Error[string](err),
+						stream.Next("3"),
 					},
 					m.ToResult(),
 				)

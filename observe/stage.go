@@ -3,6 +3,7 @@ package observe
 import (
 	"strings"
 
+	"github.com/ducka/go-kayak/stream"
 	"github.com/ducka/go-kayak/utils"
 )
 
@@ -113,9 +114,9 @@ func Stage10[TIn1, TIn2, TIn3, TIn4, TIn5, TIn6, TIn7, TIn8, TIn9, TIn10 Identif
 	obsOptions := append([]ObservableOption{WithContext(combinedCtx)}, opts.observableOptions...)
 
 	// TODO: This is basically the same as the Stream observable, except we're suplying parents. See if this can be consolidated.
-	downstream := newStream[TOut]()
+	downstream := stream.NewStream[TOut]()
 	output := newObservable[TOut](
-		func(sw StreamWriter[TOut], _ observableOptions) {
+		func(sw stream.Writer[TOut], _ observableOptions) {
 			for item := range downstream.Read() {
 				sw.Send(item)
 			}
@@ -137,7 +138,7 @@ func Stage10[TIn1, TIn2, TIn3, TIn4, TIn5, TIn6, TIn7, TIn8, TIn9, TIn10 Identif
 					break
 				}
 
-				processInput(opts.store, item, downstream, func(input Notification[TIn1], state TOut) (*TOut, error) {
+				processInput(opts.store, item, downstream, func(input stream.Notification[TIn1], state TOut) (*TOut, error) {
 					value := input.Value()
 					return stateMapper(&value, nil, nil, nil, nil, nil, nil, nil, nil, nil, state)
 				})
@@ -147,7 +148,7 @@ func Stage10[TIn1, TIn2, TIn3, TIn4, TIn5, TIn6, TIn7, TIn8, TIn9, TIn10 Identif
 					break
 				}
 
-				processInput(opts.store, item, downstream, func(input Notification[TIn2], state TOut) (*TOut, error) {
+				processInput(opts.store, item, downstream, func(input stream.Notification[TIn2], state TOut) (*TOut, error) {
 					value := input.Value()
 					return stateMapper(nil, &value, nil, nil, nil, nil, nil, nil, nil, nil, state)
 				})
@@ -157,7 +158,7 @@ func Stage10[TIn1, TIn2, TIn3, TIn4, TIn5, TIn6, TIn7, TIn8, TIn9, TIn10 Identif
 					break
 				}
 
-				processInput(opts.store, item, downstream, func(input Notification[TIn3], state TOut) (*TOut, error) {
+				processInput(opts.store, item, downstream, func(input stream.Notification[TIn3], state TOut) (*TOut, error) {
 					value := input.Value()
 					return stateMapper(nil, nil, &value, nil, nil, nil, nil, nil, nil, nil, state)
 				})
@@ -167,7 +168,7 @@ func Stage10[TIn1, TIn2, TIn3, TIn4, TIn5, TIn6, TIn7, TIn8, TIn9, TIn10 Identif
 					break
 				}
 
-				processInput(opts.store, item, downstream, func(input Notification[TIn4], state TOut) (*TOut, error) {
+				processInput(opts.store, item, downstream, func(input stream.Notification[TIn4], state TOut) (*TOut, error) {
 					value := input.Value()
 					return stateMapper(nil, nil, nil, &value, nil, nil, nil, nil, nil, nil, state)
 				})
@@ -177,7 +178,7 @@ func Stage10[TIn1, TIn2, TIn3, TIn4, TIn5, TIn6, TIn7, TIn8, TIn9, TIn10 Identif
 					break
 				}
 
-				processInput(opts.store, item, downstream, func(input Notification[TIn5], state TOut) (*TOut, error) {
+				processInput(opts.store, item, downstream, func(input stream.Notification[TIn5], state TOut) (*TOut, error) {
 					value := input.Value()
 					return stateMapper(nil, nil, nil, nil, &value, nil, nil, nil, nil, nil, state)
 				})
@@ -187,7 +188,7 @@ func Stage10[TIn1, TIn2, TIn3, TIn4, TIn5, TIn6, TIn7, TIn8, TIn9, TIn10 Identif
 					break
 				}
 
-				processInput(opts.store, item, downstream, func(input Notification[TIn6], state TOut) (*TOut, error) {
+				processInput(opts.store, item, downstream, func(input stream.Notification[TIn6], state TOut) (*TOut, error) {
 					value := input.Value()
 					return stateMapper(nil, nil, nil, nil, nil, &value, nil, nil, nil, nil, state)
 				})
@@ -197,7 +198,7 @@ func Stage10[TIn1, TIn2, TIn3, TIn4, TIn5, TIn6, TIn7, TIn8, TIn9, TIn10 Identif
 					break
 				}
 
-				processInput(opts.store, item, downstream, func(input Notification[TIn7], state TOut) (*TOut, error) {
+				processInput(opts.store, item, downstream, func(input stream.Notification[TIn7], state TOut) (*TOut, error) {
 					value := input.Value()
 					return stateMapper(nil, nil, nil, nil, nil, nil, &value, nil, nil, nil, state)
 				})
@@ -207,7 +208,7 @@ func Stage10[TIn1, TIn2, TIn3, TIn4, TIn5, TIn6, TIn7, TIn8, TIn9, TIn10 Identif
 					break
 				}
 
-				processInput(opts.store, item, downstream, func(input Notification[TIn8], state TOut) (*TOut, error) {
+				processInput(opts.store, item, downstream, func(input stream.Notification[TIn8], state TOut) (*TOut, error) {
 					value := input.Value()
 					return stateMapper(nil, nil, nil, nil, nil, nil, nil, &value, nil, nil, state)
 				})
@@ -217,7 +218,7 @@ func Stage10[TIn1, TIn2, TIn3, TIn4, TIn5, TIn6, TIn7, TIn8, TIn9, TIn10 Identif
 					break
 				}
 
-				processInput(opts.store, item, downstream, func(input Notification[TIn9], state TOut) (*TOut, error) {
+				processInput(opts.store, item, downstream, func(input stream.Notification[TIn9], state TOut) (*TOut, error) {
 					value := input.Value()
 					return stateMapper(nil, nil, nil, nil, nil, nil, nil, nil, &value, nil, state)
 				})
@@ -227,7 +228,7 @@ func Stage10[TIn1, TIn2, TIn3, TIn4, TIn5, TIn6, TIn7, TIn8, TIn9, TIn10 Identif
 					break
 				}
 
-				processInput(opts.store, item, downstream, func(input Notification[TIn10], state TOut) (*TOut, error) {
+				processInput(opts.store, item, downstream, func(input stream.Notification[TIn10], state TOut) (*TOut, error) {
 					value := input.Value()
 					return stateMapper(nil, nil, nil, nil, nil, nil, nil, nil, nil, &value, state)
 				})
@@ -239,7 +240,7 @@ func Stage10[TIn1, TIn2, TIn3, TIn4, TIn5, TIn6, TIn7, TIn8, TIn9, TIn10 Identif
 	return output
 }
 
-func processInput[TIn Identifiable, TOut any](store StateStore, input Notification[TIn], downstream StreamWriter[TOut], callback func(Notification[TIn], TOut) (*TOut, error)) {
+func processInput[TIn Identifiable, TOut any](store StateStore, input stream.Notification[TIn], downstream stream.Writer[TOut], callback func(stream.Notification[TIn], TOut) (*TOut, error)) {
 	if input.IsError() {
 		downstream.Error(input.Error())
 		return

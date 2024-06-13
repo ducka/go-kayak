@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"github.com/ducka/go-kayak/observe"
+	"github.com/ducka/go-kayak/stream"
 	"github.com/stretchr/testify/assert"
 )
 
@@ -64,7 +65,7 @@ func TestBatch(t *testing.T) {
 		timeout := time.Millisecond * 50
 		sequence := observe.GenerateIntSequence(0, numberOfItems)
 
-		ob := observe.Producer(func(streamWriter observe.StreamWriter[int]) {
+		ob := observe.Producer(func(streamWriter stream.Writer[int]) {
 			for i, item := range sequence {
 				streamWriter.Write(item)
 

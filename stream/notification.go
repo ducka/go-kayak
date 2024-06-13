@@ -1,4 +1,4 @@
-package observe
+package stream
 
 // NotificationKind
 type NotificationKind string

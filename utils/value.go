@@ -17,3 +17,7 @@ func Coalesce(values ...interface{}) interface{} {
 	}
 	return nil
 }
+
+func ToPtr[T any](v T) *T {
+	return &v
+}

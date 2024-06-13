@@ -23,7 +23,7 @@ func merge[T any](
 	opts ...ObservableOption,
 ) *Observable[T] {
 	return newObservable[T](
-		func(downstream StreamWriter[T], opts observableOptions) {
+		func(downstream stream.StreamWriter[T], opts observableOptions) {
 			mu := &sync.Mutex{}
 			startWg := &sync.WaitGroup{}
 			startWg.Add(1)

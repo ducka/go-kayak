@@ -2,10 +2,11 @@ package operator
 
 import (
 	"github.com/ducka/go-kayak/observe"
+	"github.com/ducka/go-kayak/stream"
 )
 
 type (
-	ProcessorFunc[TIn, TOut any] func(ctx observe.Context, upstream observe.StreamReader[TIn], downstream observe.StreamWriter[TOut])
+	ProcessorFunc[TIn, TOut any] func(ctx observe.Context, upstream stream.Reader[TIn], downstream stream.Writer[TOut])
 )
 
 // Process is an operator that gives direct access to the upstream and downstream streams.
@@ -18,7 +19,7 @@ func Process[TIn, TOut any](processor ProcessorFunc[TIn, TOut], opts ...observe.
 
 		return observe.Operation[TIn, TOut](
 			source,
-			func(ctx observe.Context, upstream observe.StreamReader[TIn], downstream observe.StreamWriter[TOut]) {
+			func(ctx observe.Context, upstream stream.Reader[TIn], downstream stream.Writer[TOut]) {
 				processor(ctx, upstream, downstream)
 			},
 			opts...,
