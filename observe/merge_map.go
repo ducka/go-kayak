@@ -1,5 +1,9 @@
 package observe
 
+import (
+	"github.com/ducka/go-kayak/stream"
+)
+
 func MergeMap2[TIn1, TIn2, TOut any](
 	in1 *Observable[TIn1],
 	in2 *Observable[TIn2],
@@ -317,7 +321,7 @@ func MergeMap10[TIn1, TIn2, TIn3, TIn4, TIn5, TIn6, TIn7, TIn8, TIn9, TIn10, TOu
 	return output
 }
 
-func processMergeInput[TIn any, TOut any](input Notification[TIn], downstream stream.StreamWriter[TOut], callback func(TIn) (TOut, error)) {
+func processMergeInput[TIn any, TOut any](input stream.Notification[TIn], downstream stream.Writer[TOut], callback func(TIn) (TOut, error)) {
 	if input.IsError() {
 		downstream.Error(input.Error())
 		return

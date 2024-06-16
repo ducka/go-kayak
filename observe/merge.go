@@ -2,6 +2,8 @@ package observe
 
 import (
 	"sync"
+
+	"github.com/ducka/go-kayak/stream"
 )
 
 // Merge combines multiple observables into a single observable.The
@@ -23,14 +25,14 @@ func merge[T any](
 	opts ...ObservableOption,
 ) *Observable[T] {
 	return newObservable[T](
-		func(downstream stream.StreamWriter[T], opts observableOptions) {
+		func(downstream stream.Writer[T], opts observableOptions) {
 			mu := &sync.Mutex{}
 			startWg := &sync.WaitGroup{}
 			startWg.Add(1)
 			closeWg := &sync.WaitGroup{}
 			closeWg.Add(len(observables))
 
-			errors := make([]Notification[T], 0)
+			errors := make([]stream.Notification[T], 0)
 
 			f := func(o *Observable[T]) {
 				defer closeWg.Done()

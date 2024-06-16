@@ -16,8 +16,6 @@ func TestDemo(t *testing.T) {
 	wg := &sync.WaitGroup{}
 	wg.Add(1)
 
-	observe.Cron("")
-
 	ob := observe.Pipe7(
 		observe.Range(0, 100, observe.WithActivityName("Observing kafka")),
 		operator.Filter[int](func(item int) bool {

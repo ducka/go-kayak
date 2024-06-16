@@ -7,6 +7,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/ducka/go-kayak/stream"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/mock"
 )
@@ -56,14 +57,14 @@ func TestObservable(t *testing.T) {
 	t.Run("When observing a sequence that emits an error midway", func(t *testing.T) {
 		err := errors.New("error")
 
-		sut := Producer[int](func(stream stream.StreamWriter[int]) {
+		sut := Producer[int](func(stream stream.Writer[int]) {
 			stream.Write(1)
 			stream.Error(err)
 			stream.Write(3)
 		}, WithErrorStrategy(ContinueOnError))
 
 		t.Run("And an operator processes the sequence with a ContinueOnError strategy", func(t *testing.T) {
-			op := Operation[int, int](sut, func(ctx Context, s stream.StreamReader[int], s2 stream.StreamWriter[int]) {
+			op := Operation[int, int](sut, func(ctx Context, s stream.Reader[int], s2 stream.Writer[int]) {
 				for item := range s.Read() {
 					s2.Send(item)
 				}
@@ -72,10 +73,10 @@ func TestObservable(t *testing.T) {
 			t.Run("Then the observable should emit the full sequence including the error", func(t *testing.T) {
 				actual := op.ToResult()
 				assert.Equal(t,
-					[]Notification[int]{
-						Next(1),
-						Error[int](err),
-						Next(3),
+					[]stream.Notification[int]{
+						stream.Next(1),
+						stream.Error[int](err),
+						stream.Next(3),
 					},
 					actual,
 				)
@@ -89,14 +90,14 @@ func TestObservable(t *testing.T) {
 		sequenceLength := 20
 
 		sut := Producer[int](
-			func(streamWriter stream.StreamWriter[int]) {
+			func(Writer stream.Writer[int]) {
 				for i := 0; i < sequenceLength; i++ {
 					// Cancel the getContext of the observable half way through the producer processing the sequence
 					if sequenceLength/2 == i {
 						cancel()
 					}
 
-					streamWriter.Write(i)
+					Writer.Write(i)
 				}
 			},
 			WithContext(ctx),
@@ -105,7 +106,7 @@ func TestObservable(t *testing.T) {
 		results := sut.ToResult()
 
 		t.Run("Then the last emitted element should be a getContext cancellation error", func(t *testing.T) {
-			assert.Equal(t, Error[int](context.Canceled), results[len(results)-1])
+			assert.Equal(t, stream.Error[int](context.Canceled), results[len(results)-1])
 		})
 
 		t.Run("And the emitted sequence should be shorter than the upstream sequence", func(t *testing.T) {
@@ -159,9 +160,9 @@ func TestObservable(t *testing.T) {
 		wg := &sync.WaitGroup{}
 		wg.Add(1)
 
-		sut := Producer[int](func(streamWriter stream.StreamWriter[int]) {
+		sut := Producer[int](func(Writer stream.Writer[int]) {
 			for i := 0; i < sequenceLength; i++ {
-				streamWriter.Write(i)
+				Writer.Write(i)
 			}
 			wg.Done()
 		}, WithBackpressureStrategy(Drop))
@@ -181,9 +182,9 @@ func TestObservable(t *testing.T) {
 
 	t.Run("When an observable uses a Block backpressure strategy", func(t *testing.T) {
 		sequenceLength := 100
-		sut := Producer[int](func(streamWriter stream.StreamWriter[int]) {
+		sut := Producer[int](func(Writer stream.Writer[int]) {
 			for i := 0; i < sequenceLength; i++ {
-				streamWriter.Write(i)
+				Writer.Write(i)
 			}
 		}, WithBackpressureStrategy(Block))
 
@@ -209,9 +210,9 @@ func TestObservable(t *testing.T) {
 
 	t.Run("When an observable uses a Block backpressure strategy", func(t *testing.T) {
 		sequenceLength := 100
-		sut := Producer[int](func(streamWriter stream.StreamWriter[int]) {
+		sut := Producer[int](func(Writer stream.Writer[int]) {
 			for i := 0; i < sequenceLength; i++ {
-				streamWriter.Write(i)
+				Writer.Write(i)
 			}
 		}, WithBackpressureStrategy(Block))
 
@@ -249,7 +250,7 @@ func TestObservable(t *testing.T) {
 
 		op := Operation[int, int](
 			ob,
-			func(ctx Context, s stream.StreamReader[int], s2 stream.StreamWriter[int]) {
+			func(ctx Context, s stream.Reader[int], s2 stream.Writer[int]) {
 				// The number of times this operator function executes should equal the pool size. Each operator function has its own
 				// stream which is written to in a roundrobin style concurrently. If this active producers count doesn't match the pool
 				// size, this should indicate a bug in the pool implementation.
@@ -284,14 +285,14 @@ func TestObservable(t *testing.T) {
 		bufferSize := uint64(10)
 
 		ob := Producer[int](
-			func(streamWriter stream.StreamWriter[int]) {
+			func(Writer stream.Writer[int]) {
 				for i := 0; i < 15; i++ {
 					// increment the counter to observe the buffer filling up
 					mu.Lock()
 					actual++
 					mu.Unlock()
 
-					streamWriter.Write(i)
+					Writer.Write(i)
 				}
 
 			},
@@ -459,8 +460,8 @@ func makeSubscriber(strategy ErrorStrategy, sequence ...any) *SubscriberMock[int
 	return subscriber
 }
 
-func produceSequence(sequence ...any) func(stream stream.StreamWriter[int]) {
-	return func(stream stream.StreamWriter[int]) {
+func produceSequence(sequence ...any) func(stream stream.Writer[int]) {
+	return func(stream stream.Writer[int]) {
 		for _, v := range sequence {
 			if err, ok := v.(error); ok {
 				stream.Error(err)
@@ -472,18 +473,10 @@ func produceSequence(sequence ...any) func(stream stream.StreamWriter[int]) {
 	}
 }
 
-func produceNumbers(squenceLength int) func(stream stream.StreamWriter[int]) {
-	return func(stream stream.StreamWriter[int]) {
-		for i := 0; i < squenceLength; i++ {
-			stream.Write(i)
-		}
-	}
-}
-
-func assertSequence[T any](t *testing.T, expected []any, actual []Notification[T]) {
+func assertSequence[T any](t *testing.T, expected []any, actual []stream.Notification[T]) {
 	actualValues := make([]any, 0, len(actual))
 	for _, n := range actual {
-		if n.Kind() == ErrorKind {
+		if n.Kind() == stream.ErrorKind {
 			actualValues = append(actualValues, n.Error())
 			continue
 		}

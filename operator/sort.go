@@ -45,11 +45,11 @@ func Sort[T any](comparer SorterFunc[T], opts ...observe.ObservableOption) obser
 }
 
 type sorter[T any] struct {
-	items    []observe.Notification[T]
+	items    []stream.Notification[T]
 	comparer SorterFunc[T]
 }
 
-func newSorter[T any](items []observe.Notification[T], comparer SorterFunc[T]) sorter[T] {
+func newSorter[T any](items []stream.Notification[T], comparer SorterFunc[T]) sorter[T] {
 	return sorter[T]{
 		items:    items,
 		comparer: comparer,

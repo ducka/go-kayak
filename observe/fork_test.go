@@ -4,12 +4,13 @@ import (
 	"sync"
 	"testing"
 
+	"github.com/ducka/go-kayak/stream"
 	"github.com/stretchr/testify/assert"
 )
 
 type testForkResults struct {
-	actual1 []Notification[int]
-	actual2 []Notification[int]
+	actual1 []stream.Notification[int]
+	actual2 []stream.Notification[int]
 }
 
 func TestFork(t *testing.T) {

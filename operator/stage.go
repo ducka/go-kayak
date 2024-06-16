@@ -3,8 +3,10 @@ package operator
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/avast/retry-go/v4"
@@ -43,27 +45,34 @@ func Stage[TIn, TOut any](keySelector KeySelectorFunc[TIn], stateMapper StateMap
 	opts = defaultActivityName("Stage", opts)
 
 	return func(source *observe.Observable[TIn]) *observe.Observable[TOut] {
-
 		return observe.Operation[TIn, TOut](
 			source,
 			func(ctx observe.Context, upstream stream.Reader[TIn], downstream stream.Writer[TOut]) {
+				batchStream := stream.NewStream[[]TIn]()
 				batcher := newBatcher[TIn](10, utils.ToPtr(time.Millisecond*200))
 				stager := newStager[TIn, TOut](keySelector, stateMapper, stateStore)
 
-				batchStream := stream.NewStream[[]TIn]()
-				batcher(ctx, upstream, batchStream)
-				stager(ctx, batchStream, downstream)
+				// TODO: Consider wrapping this pattern up into some sort of "flow" abstraction. Something that
+				// handles the instantiation of the stream, calling of the operation, etc.
+				// TODO: How does client cancellation work with below?
+				// TODO: Would this new flow abstraction have to support client cancellation?
+				// TODO: Should flow some how be used inside Observable?
 
+				wg := new(sync.WaitGroup)
+				wg.Add(1)
+
+				go func() {
+					defer batchStream.Close()
+					batcher(ctx, upstream, batchStream)
+				}()
+				go func() {
+					defer wg.Done()
+					stager(ctx, batchStream, downstream)
+				}()
+				wg.Wait()
 			},
 			opts...,
 		)
-
-		// TODO:
-		// 1) You're going to need to do your own form of batching here, instead of relying off a pipeline activity.
-		// 2) How are you going to handle retries? How are you going to handle different types of errors?
-		// 3) Does the concurrency error really need to return state entries, or should it just return keys? It would be better if it returned keys.
-		// 4) Could it be possible to simply feed retried entries back into the pipeline, instead of retrying an entire batch?
-
 	}
 }
 
@@ -97,41 +106,66 @@ func newStager[TIn, TOut any](keySelector KeySelectorFunc[TIn], stateMapper Stat
 
 			var distinctKeys, upstreamItems = mapItems(batch.Value())
 
-			result, err := retry.DoWithData[map[string]StateEntry[TOut]](func() (map[string]StateEntry[TOut], error) {
-				stateEntries, err := stateStore.Get(ctx, distinctKeys...)
+			var stateEntries map[string]StateEntry[TOut]
 
-				if err != nil {
-					return nil, err
+			var err retry.Error
+			errors.As(
+				retry.Do(
+					func() error {
+						var err2 error
+						stateEntries, err2 = stateStore.Get(ctx, distinctKeys...)
+
+						if err2 != nil {
+							return err2
+						}
+
+						for _, upstreamItem := range upstreamItems {
+							stateEntry := stateEntries[upstreamItem.Key]
+							state := stateEntry.State
+
+							if state == nil {
+								state = new(TOut)
+							}
+
+							state, err2 = stateMapper(upstreamItem.Item, *state)
+
+							if err2 != nil {
+								return err2
+							}
+
+							stateEntry.State = state
+							stateEntries[upstreamItem.Key] = stateEntry
+						}
+
+						err2 = stateStore.Set(ctx, stateEntries)
+
+						return err2
+					},
+					retry.Attempts(3),
+				),
+				&err,
+			)
+
+			var lastErr error
+			if len(err) > 0 {
+				lastErr = err[len(err)-1]
+			}
+
+			conflicts := make(map[string]interface{})
+			var conflictsErr *StateStoreConflict
+			if errors.As(lastErr, &conflictsErr) {
+				for _, key := range conflictsErr.GetConflicts() {
+					conflicts[key] = nil
 				}
+			}
 
-				for _, upstreamItem := range upstreamItems {
-					stateEntry := stateEntries[upstreamItem.Key]
-					state := stateEntry.State
-
-					if state == nil {
-						state = new(TOut)
-					}
-
-					state, err = stateMapper(upstreamItem.Item, *state)
-
-					if err != nil {
-						return nil, err
-					}
-
-					stateEntry.State = state
-					stateEntries[upstreamItem.Key] = stateEntry
+			for _, stateEntry := range stateEntries {
+				if _, found := conflicts[stateEntry.Key]; found {
+					downstream.Error(fmt.Errorf("State entry was modified concurrently"))
+				} else {
+					downstream.Write(*stateEntry.State)
 				}
-
-				err = stateStore.Set(ctx, stateEntries)
-
-				// TODO: In the case of error, we need to return the state entries here along with the conflicts. On the outside
-				// of the retry policy we pass successful items on down stream, and register the conflicts as errors.
-
-				return stateEntries, err
-			})
-
-			fmt.Println(result, err)
-
+			}
 		}
 	}
 }
@@ -165,15 +199,15 @@ type StateStore[TState any] interface {
 	Set(ctx context.Context, entries map[string]StateEntry[TState]) error
 }
 
-type StateStoreConflict[TState any] struct {
-	conflicts map[string]StateEntry[TState]
+type StateStoreConflict struct {
+	conflicts []string
 }
 
-func (s StateStoreConflict[TState]) Error() string {
+func (s *StateStoreConflict) Error() string {
 	return "State entry was modified concurrently"
 }
 
-func (s StateStoreConflict[TState]) GetConflicts() map[string]StateEntry[TState] {
+func (s *StateStoreConflict) GetConflicts() []string {
 	return s.conflicts
 }
 
@@ -260,7 +294,7 @@ func (r *RedisStateStore[TState]) Get(ctx context.Context, keys ...string) (map[
 const (
 	setStateLuaScript = `
 local conflicts = {}
-
+local conflictCount = 0
 for i, key in ipairs(KEYS) do
 	local ix = ((i - 1) * #KEYS) + 1
     local value = ARGV[ix]
@@ -275,8 +309,13 @@ for i, key in ipairs(KEYS) do
 			redis.call('EXPIRE', key, expire)  -- Set the expiration time for the key
 		end
     else
+		conflictCount = conflictCount + 1
 		table.insert(conflicts, key)
     end
+end
+
+if conflictCount == 0 then 
+	return "[]"
 end
 
 return cjson.encode(conflicts)
@@ -312,21 +351,18 @@ func (r *RedisStateStore[TState]) Set(ctx context.Context, entries map[string]St
 		return err
 	}
 
-	conflictKeys := make([]string, 0)
+	conflicts := make([]string, 0)
 
-	err = r.marshaller.Deserialize(setCmdResp.(string), &conflictKeys)
+	err = r.marshaller.Deserialize(setCmdResp.(string), &conflicts)
 
 	if err != nil {
 		return err
 	}
 
-	if len(conflictKeys) > 0 {
-		conflicts := make(map[string]StateEntry[TState])
-		for _, key := range conflictKeys {
-			conflicts[key] = entries[key]
+	if len(conflicts) > 0 {
+		return &StateStoreConflict{
+			conflicts: conflicts,
 		}
-
-		return StateStoreConflict[TState]{conflicts: conflicts}
 	}
 
 	return nil

@@ -2,6 +2,7 @@ package operator
 
 import (
 	"github.com/ducka/go-kayak/observe"
+	"github.com/ducka/go-kayak/stream"
 )
 
 // Passthrough is an operator that passes all Items through without modification.
@@ -10,7 +11,7 @@ func Passthrough[T any](opts ...observe.ObservableOption) observe.OperatorFunc[T
 	return func(source *observe.Observable[T]) *observe.Observable[T] {
 		return observe.Operation[T, T](
 			source,
-			func(ctx observe.Context, upstream observe.StreamReader[T], downstream observe.StreamWriter[T]) {
+			func(ctx observe.Context, upstream stream.Reader[T], downstream stream.Writer[T]) {
 				for i := range upstream.Read() {
 					downstream.Send(i)
 				}

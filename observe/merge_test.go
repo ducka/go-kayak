@@ -4,6 +4,7 @@ import (
 	"sort"
 	"testing"
 
+	"github.com/ducka/go-kayak/stream"
 	"github.com/stretchr/testify/assert"
 )
 
@@ -30,7 +31,7 @@ func TestMerge(t *testing.T) {
 	})
 }
 
-func toValues[T any](notifications ...Notification[T]) []T {
+func toValues[T any](notifications ...stream.Notification[T]) []T {
 	values := make([]T, 0, len(notifications))
 	for _, n := range notifications {
 		values = append(values, n.Value())

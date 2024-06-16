@@ -58,7 +58,7 @@ func TestStage(t *testing.T) {
 		Addr: ":6379",
 	})
 
-	rdb.AddHook(hook{})
+	//rdb.AddHook(hook{})
 
 	ob1 := observe.Array(
 		[]InputValue{
