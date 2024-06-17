@@ -7,6 +7,7 @@ import (
 	"testing"
 
 	"github.com/ducka/go-kayak/observe"
+	"github.com/ducka/go-kayak/store"
 	"github.com/ducka/go-kayak/utils"
 	"github.com/redis/go-redis/v9"
 )
@@ -116,7 +117,7 @@ func TestStage(t *testing.T) {
 			}
 			return &state, nil
 		},
-		NewRedisStateStore[StagedValue](rdb),
+		store.NewRedisStore[StagedValue](rdb),
 	)(merge)
 
 	for _, item := range staged.ToResult() {
