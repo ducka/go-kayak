@@ -55,9 +55,9 @@ func (h hook) ProcessPipelineHook(next redis.ProcessPipelineHook) redis.ProcessP
 
 func TestStage(t *testing.T) {
 
-	rdb := redis.NewClient(&redis.Options{
-		Addr: ":6379",
-	})
+	//rdb := redis.NewClient(&redis.Options{
+	//	Addr: ":6379",
+	//})
 
 	//rdb.AddHook(hook{})
 
@@ -117,7 +117,8 @@ func TestStage(t *testing.T) {
 			}
 			return &state, nil
 		},
-		store.NewRedisStore[StagedValue](rdb),
+		store.NewInMemoryStore[StagedValue](),
+		//store.NewRedisStore[StagedValue](rdb),
 	)(merge)
 
 	for _, item := range staged.ToResult() {

@@ -20,35 +20,35 @@ func NewInMemoryStore[T any]() *InMemoryStore[T] {
 	}
 }
 
-func (i *InMemoryStore[T]) Get(ctx context.Context, keys ...string) (map[string]StateEntry[T], error) {
+func (i *InMemoryStore[T]) Get(ctx context.Context, keys ...string) ([]StateEntry[T], error) {
 	i.mu.RLock()
 	defer i.mu.RUnlock()
 
-	result := make(map[string]StateEntry[T])
+	result := make([]StateEntry[T], 0, len(keys))
 	for _, key := range keys {
 		if entry, ok := i.store[key]; ok {
-			result[key] = entry
+			result = append(result, entry)
 		}
 	}
 	return result, nil
 }
 
-func (i *InMemoryStore[T]) Set(ctx context.Context, entries map[string]StateEntry[T]) error {
+func (i *InMemoryStore[T]) Set(ctx context.Context, entries ...StateEntry[T]) error {
 	i.mu.Lock()
 	defer i.mu.Unlock()
 
 	conflicts := make([]string, 0)
 
-	for key, entry := range entries {
-		if stored, ok := i.store[key]; ok {
+	for _, entry := range entries {
+		if stored, ok := i.store[entry.Key]; ok {
 			if stored.Timestamp != entry.Timestamp {
-				conflicts = append(conflicts, key)
+				conflicts = append(conflicts, entry.Key)
 				continue
 			}
 		}
 
 		entry.Timestamp = utils.ToPtr(time.Now().Unix())
-		i.store[key] = entry
+		i.store[entry.Key] = entry
 	}
 
 	if len(conflicts) > 0 {

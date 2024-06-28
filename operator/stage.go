@@ -32,6 +32,7 @@ func Stage[TIn, TOut any](keySelector KeySelectorFunc[TIn], stateMapper StateMap
 			source,
 			func(ctx observe.Context, upstream stream.Reader[TIn], downstream stream.Writer[TOut]) {
 				batchStream := stream.NewStream[[]TIn]()
+				// TODO: make batch size a configurable setting
 				batcher := newBatcher[TIn](10, utils.ToPtr(time.Millisecond*200))
 				stager := newStager[TIn, TOut](keySelector, stateMapper, stateStore)
 
@@ -60,6 +61,7 @@ func newStager[TIn, TOut any](keySelector KeySelectorFunc[TIn], stateMapper Stat
 	) {
 		distinctKeys := make(map[string]struct{}, len(items))
 		keys := make([]string, 0, len(items))
+
 		mappedItems := make([]itemWithKey[TIn], 0, len(items))
 
 		for _, item := range items {
@@ -83,26 +85,32 @@ func newStager[TIn, TOut any](keySelector KeySelectorFunc[TIn], stateMapper Stat
 
 			var distinctKeys, upstreamItems = mapItems(batch.Value())
 
-			var stateEntries map[string]store.StateEntry[TOut]
+			var stateEntriesMap map[string]store.StateEntry[TOut]
 
 			var err retry.Error
 			errors.As(
 				retry.Do(
 					func() error {
-						var err2 error
-						stateEntries, err2 = stateStore.Get(ctx, distinctKeys...)
+						stateEntries, err2 := stateStore.Get(ctx, distinctKeys...)
+						stateEntriesMap = utils.ArrayToMap(stateEntries, func(entry store.StateEntry[TOut]) string {
+							return entry.Key
+						})
 
 						if err2 != nil {
 							return err2
 						}
 
 						for _, upstreamItem := range upstreamItems {
-							stateEntry := stateEntries[upstreamItem.Key]
-							state := stateEntry.State
+							stateEntry, found := stateEntriesMap[upstreamItem.Key]
 
-							if state == nil {
-								state = new(TOut)
+							if !found {
+								stateEntry = store.StateEntry[TOut]{
+									Key:   upstreamItem.Key,
+									State: new(TOut),
+								}
 							}
+
+							state := stateEntry.State
 
 							state, err2 = stateMapper(upstreamItem.Item, *state)
 
@@ -111,10 +119,11 @@ func newStager[TIn, TOut any](keySelector KeySelectorFunc[TIn], stateMapper Stat
 							}
 
 							stateEntry.State = state
-							stateEntries[upstreamItem.Key] = stateEntry
+							stateEntriesMap[upstreamItem.Key] = stateEntry
 						}
 
-						err2 = stateStore.Set(ctx, stateEntries)
+						stateEntries = utils.MapToArray(stateEntriesMap)
+						err2 = stateStore.Set(ctx, stateEntries...)
 
 						return err2
 					},
@@ -139,7 +148,7 @@ func newStager[TIn, TOut any](keySelector KeySelectorFunc[TIn], stateMapper Stat
 				}
 			}
 
-			for _, stateEntry := range stateEntries {
+			for _, stateEntry := range stateEntriesMap {
 				if _, found := conflicts[stateEntry.Key]; found {
 					downstream.Error(fmt.Errorf("State entry was modified concurrently"))
 				} else {

@@ -21,3 +21,19 @@ func Coalesce(values ...interface{}) interface{} {
 func ToPtr[T any](v T) *T {
 	return &v
 }
+
+func ArrayToMap[K comparable, V any](items []V, keySelector func(V) K) map[K]V {
+	result := make(map[K]V)
+	for _, item := range items {
+		result[keySelector(item)] = item
+	}
+	return result
+}
+
+func MapToArray[K comparable, V any](items map[K]V) []V {
+	result := make([]V, 0, len(items))
+	for _, item := range items {
+		result = append(result, item)
+	}
+	return result
+}

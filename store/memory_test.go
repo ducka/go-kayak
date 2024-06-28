@@ -6,19 +6,27 @@ import (
 	"time"
 
 	"github.com/ducka/go-kayak/utils"
+	"github.com/google/uuid"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/suite"
 )
 
-type InMemoryStoreTestSuite struct {
+type StoreTestSuite[TStoreState any] struct {
 	suite.Suite
 	ctx           context.Context
 	existingKey   string
-	existingEntry StateEntry[string]
-	newEntry      StateEntry[string]
+	existingEntry StateEntry[TStoreState]
+	newEntry      StateEntry[TStoreState]
+	createSUT     func() StateStore[TStoreState]
 }
 
-func (t *InMemoryStoreTestSuite) SetupTest() {
+func NewStoreTestSuite[TStoreState any](storeFactory func() StateStore[TStoreState]) *StoreTestSuite[TStoreState] {
+	return &StoreTestSuite[TStoreState]{
+		createSUT: storeFactory,
+	}
+}
+
+func (t *StoreTestSuite[TStoreState]) SetupTest() {
 	t.ctx = context.Background()
 	t.existingKey = "existing-key"
 	t.existingEntry = StateEntry[string]{
@@ -35,11 +43,11 @@ func (t *InMemoryStoreTestSuite) SetupTest() {
 	}
 }
 
-func (t *InMemoryStoreTestSuite) TestInMemoryStore() {
-	t.Run("Given an in-memory store", func() {
+func (t *StoreTestSuite[TStoreState]) TestInMemoryStore() {
+	t.Run("Given a state store", func() {
 		sut := t.createSUT()
 
-		t.Run("When getting a non-existent key", func() {
+		t.Run("When getting a non-existent key from the store", func() {
 			result, _ := sut.Get(t.ctx, "non-existent")
 
 			t.Run("Then the result is empty", func() {
@@ -47,11 +55,24 @@ func (t *InMemoryStoreTestSuite) TestInMemoryStore() {
 			})
 		})
 
-		t.Run("When getting an existing key", func() {
-			result, _ := sut.Get(t.ctx, t.existingKey)
+		t.Run("When setting a new key to the store", func() {
+			newEntry := StateEntry[TStoreState]{
+				Key:   uuid.NewString(),
+				State: new(TStoreState),
+			}
 
-			t.Run("Then the result is the existing entry", func() {
-				assert.Equal(t.T(), t.existingEntry, result[t.existingKey])
+			err := sut.Set(t.ctx, newEntry)
+
+			t.Run("Then no error should occur", func() {
+				assert.Empty(t.T(), err)
+			})
+
+			t.Run("Then when getting an existing key from the store", func() {
+				existingEntry, _ := sut.Get(t.ctx, newEntry.Key)
+
+				t.Run("Then the result is the existing entry", func() {
+					assert.Equal(t.T(), newEntry, existingEntry)
+				})
 			})
 		})
 	})
@@ -135,12 +156,9 @@ func (t *InMemoryStoreTestSuite) TestInMemoryStore() {
 	})
 }
 
-func (t *InMemoryStoreTestSuite) createSUT() *InMemoryStore[string] {
-	sut := NewInMemoryStore[string]()
-	sut.store[t.existingKey] = t.existingEntry
-	return sut
-}
-
 func TestInMemoryStoreTestSuite(t *testing.T) {
-	suite.Run(t, new(InMemoryStoreTestSuite))
+	testSuite := NewStoreTestSuite[string](func() StateStore[string] {
+		return NewInMemoryStore[string]()
+	})
+	suite.Run(t, testSuite)
 }

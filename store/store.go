@@ -13,8 +13,8 @@ type StateEntry[TState any] struct {
 }
 
 type StateStore[TState any] interface {
-	Get(ctx context.Context, keys ...string) (map[string]StateEntry[TState], error)
-	Set(ctx context.Context, entries map[string]StateEntry[TState]) error
+	Get(ctx context.Context, keys ...string) ([]StateEntry[TState], error)
+	Set(ctx context.Context, entries ...StateEntry[TState]) error
 }
 
 type StateStoreConflict struct {

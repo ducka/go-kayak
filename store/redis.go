@@ -45,7 +45,7 @@ return cjson.encode(results)
 `
 )
 
-func (r *RedisStore[TState]) Get(ctx context.Context, keys ...string) (map[string]StateEntry[TState], error) {
+func (r *RedisStore[TState]) Get(ctx context.Context, keys ...string) ([]StateEntry[TState], error) {
 	cmd := r.client.Eval(ctx, getStateLuaScript, keys)
 
 	redisResult, err := cmd.Result()
@@ -63,7 +63,7 @@ func (r *RedisStore[TState]) Get(ctx context.Context, keys ...string) (map[strin
 		return nil, err
 	}
 
-	stateEntries := make(map[string]StateEntry[TState])
+	stateEntries := make([]StateEntry[TState], 0, len(keys))
 
 	for _, k := range keys {
 		stateEntry := StateEntry[TState]{
@@ -81,7 +81,7 @@ func (r *RedisStore[TState]) Get(ctx context.Context, keys ...string) (map[strin
 			stateEntry.Timestamp = &getResult.Timestamp
 		}
 
-		stateEntries[k] = stateEntry
+		stateEntries = append(stateEntries, stateEntry)
 	}
 
 	return stateEntries, nil
@@ -118,7 +118,7 @@ return cjson.encode(conflicts)
 `
 )
 
-func (r *RedisStore[TState]) Set(ctx context.Context, entries map[string]StateEntry[TState]) error {
+func (r *RedisStore[TState]) Set(ctx context.Context, entries ...StateEntry[TState]) error {
 	keys := make([]string, 0, len(entries))
 	args := make([]interface{}, 0, len(entries)*3)
 
