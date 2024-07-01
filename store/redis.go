@@ -2,6 +2,9 @@ package store
 
 import (
 	"context"
+	"fmt"
+	"strconv"
+	"time"
 
 	"github.com/ducka/go-kayak/utils"
 	"github.com/redis/go-redis/v9"
@@ -35,7 +38,7 @@ for i, key in ipairs(KEYS) do
 		}
 
 		result.State = values[1]
-		result.Timestamp = tonumber(values[2])
+		result.Timestamp = values[2]
 
 		results[key] = result
 	end
@@ -65,21 +68,21 @@ func (r *RedisStore[TState]) Get(ctx context.Context, keys ...string) ([]StateEn
 
 	stateEntries := make([]StateEntry[TState], 0, len(keys))
 
-	for _, k := range keys {
+	for key, value := range getResults {
+		timestamp, _ := strconv.ParseInt(value.Timestamp, 10, 64)
 		stateEntry := StateEntry[TState]{
-			Key:   k,
-			State: new(TState),
+			Key:       key,
+			Timestamp: utils.ToPtr(timestamp),
+		}
+		state := &stateEnvelope[TState]{}
+
+		err = r.marshaller.Deserialize(value.State, state)
+
+		if err != nil {
+			return nil, err
 		}
 
-		if getResult, ok := getResults[k]; ok {
-			err = r.marshaller.Deserialize(getResult.State, stateEntry.State)
-
-			if err != nil {
-				return nil, err
-			}
-
-			stateEntry.Timestamp = &getResult.Timestamp
-		}
+		stateEntry.State = state.V
 
 		stateEntries = append(stateEntries, stateEntry)
 	}
@@ -94,13 +97,14 @@ local conflictCount = 0
 for i, key in ipairs(KEYS) do
 	local ix = ((i - 1) * #KEYS) + 1
     local value = ARGV[ix]
-    local expectedTimestamp = tonumber(ARGV[ix + 1])
+    local expectedTimestamp = ARGV[ix + 1]
     local expire = tonumber(ARGV[ix + 2])  -- Expiration in seconds
-    local currentTimestamp = tonumber(redis.call('HGET', key, 'timestamp'))
+    local currentTimestamp = redis.call('HGET', key, 'timestamp')
+	local nextTimestamp = ARGV[ix + 3]
 
     -- Check if the timestamp has been modified. If it has, some other process has modified the state concurrently
-    if currentTimestamp == nil or currentTimestamp == expectedTimestamp then
-		redis.call('HMSET', key, 'value', value, 'timestamp', redis.call('TIME')[1]) -- Set the timestamp to the latest unix timestamp
+    if not currentTimestamp or currentTimestamp == expectedTimestamp then
+		redis.call('HMSET', key, 'value', value, 'timestamp', nextTimestamp)
 		if expire > 0 then
 			redis.call('EXPIRE', key, expire)  -- Set the expiration time for the key
 		end
@@ -124,12 +128,12 @@ func (r *RedisStore[TState]) Set(ctx context.Context, entries ...StateEntry[TSta
 
 	for _, entry := range entries {
 		keys = append(keys, entry.Key)
-
-		stateJson, _ := r.marshaller.Serialize(*entry.State)
-
-		var timestamp int64 = -1
+		state := &stateEnvelope[TState]{V: entry.State}
+		stateJson, err := r.marshaller.Serialize(state)
+		fmt.Println(err)
+		var currentTimestamp int64 = -1
 		if entry.Timestamp != nil {
-			timestamp = *entry.Timestamp
+			currentTimestamp = *entry.Timestamp
 		}
 
 		var expiration int64 = -1
@@ -137,7 +141,9 @@ func (r *RedisStore[TState]) Set(ctx context.Context, entries ...StateEntry[TSta
 			expiration = int64(entry.Expiry.Seconds())
 		}
 
-		args = append(args, stateJson, timestamp, expiration)
+		nextTimestamp := time.Now().UnixNano()
+
+		args = append(args, stateJson, currentTimestamp, expiration, nextTimestamp)
 	}
 
 	setCmd := r.client.Eval(ctx, setStateLuaScript, keys, args...)
@@ -166,5 +172,9 @@ func (r *RedisStore[TState]) Set(ctx context.Context, entries ...StateEntry[TSta
 
 type redisGetResult struct {
 	State     string
-	Timestamp int64
+	Timestamp string
+}
+
+type stateEnvelope[TState any] struct {
+	V TState
 }

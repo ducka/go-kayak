@@ -7,7 +7,7 @@ import (
 
 type StateEntry[TState any] struct {
 	Key       string
-	State     *TState
+	State     TState
 	Timestamp *int64
 	Expiry    *time.Duration
 }
