@@ -47,8 +47,12 @@ func (i *InMemoryStore[T]) Set(ctx context.Context, entries ...StateEntry[T]) er
 			}
 		}
 
-		entry.Timestamp = utils.ToPtr(time.Now().Unix())
-		i.store[entry.Key] = entry
+		if entry.State == nil {
+			delete(i.store, entry.Key)
+		} else {
+			entry.Timestamp = utils.ToPtr(time.Now().Unix())
+			i.store[entry.Key] = entry
+		}
 	}
 
 	if len(conflicts) > 0 {

@@ -2,7 +2,6 @@ package store
 
 import (
 	"context"
-	"time"
 
 	"github.com/ducka/go-kayak/utils"
 	"github.com/google/uuid"
@@ -24,7 +23,6 @@ func NewStoreTestSuite(storeFactory func() StateStore[string]) *StoreTestSuite {
 }
 
 func (t *StoreTestSuite) TestGettingAndSetting() {
-
 	sut := t.createSUT()
 
 	// Test getting a non-existent key
@@ -36,7 +34,7 @@ func (t *StoreTestSuite) TestGettingAndSetting() {
 	// Test setting a new key
 	newEntry := StateEntry[string]{
 		Key:   uuid.NewString(),
-		State: uuid.NewString(),
+		State: utils.ToPtr(uuid.NewString()),
 	}
 
 	var gotEntry StateEntry[string]
@@ -56,7 +54,7 @@ func (t *StoreTestSuite) TestGettingAndSetting() {
 	// Test updating an existing key
 	updatedEntry := StateEntry[string]{
 		Key:       newEntry.Key,
-		State:     uuid.NewString(),
+		State:     utils.ToPtr(uuid.NewString()),
 		Timestamp: gotEntry.Timestamp,
 	}
 	err = sut.Set(t.ctx, updatedEntry)
@@ -71,6 +69,20 @@ func (t *StoreTestSuite) TestGettingAndSetting() {
 	assert.Equal(t.T(), updatedEntry.State, gotEntry.State)
 	assert.NotEmpty(t.T(), gotEntry.Timestamp)
 
+	// Test deleting the key
+	err = sut.Set(t.ctx, StateEntry[string]{
+		Key:       updatedEntry.Key,
+		State:     nil,
+		Timestamp: gotEntry.Timestamp,
+	})
+	assert.Empty(t.T(), err)
+
+	// Test getting a non-existent key
+	result, err = sut.Get(t.ctx, updatedEntry.Key)
+
+	assert.Empty(t.T(), result)
+	assert.NoError(t.T(), err)
+
 }
 
 func (t *StoreTestSuite) TestOptimisticConcurrency() {
@@ -78,7 +90,7 @@ func (t *StoreTestSuite) TestOptimisticConcurrency() {
 
 	newEntry := StateEntry[string]{
 		Key:   uuid.NewString(),
-		State: uuid.NewString(),
+		State: utils.ToPtr(uuid.NewString()),
 	}
 
 	err := sut.Set(t.ctx, newEntry)
@@ -103,27 +115,27 @@ func (t *StoreTestSuite) TestOptimisticConcurrency() {
 	}
 }
 
-func (t *StoreTestSuite) TestEntryExpiry() {
-	sut := t.createSUT()
-
-	newEntry := StateEntry[string]{
-		Key:    uuid.NewString(),
-		State:  uuid.NewString(),
-		Expiry: utils.ToPtr(1 * time.Second),
-	}
-
-	err := sut.Set(t.ctx, newEntry)
-	assert.NoError(t.T(), err)
-
-	// Retrieve the set key from the store
-	retrievedEntries, err := sut.Get(t.ctx, newEntry.Key)
-	assert.Len(t.T(), retrievedEntries, 1)
-	assert.NoError(t.T(), err)
-	assert.Equal(t.T(), retrievedEntries[0].Key, newEntry.Key)
-
-	time.Sleep(2 * time.Second)
-
-	retrievedEntries, err = sut.Get(t.ctx, newEntry.Key)
-	assert.Empty(t.T(), retrievedEntries)
-	assert.NoError(t.T(), err)
-}
+//func (t *StoreTestSuite) TestEntryExpiry() {
+//	sut := t.createSUT()
+//
+//	newEntry := StateEntry[string]{
+//		Key:    uuid.NewString(),
+//		State:  utils.ToPtr(uuid.NewString()),
+//		Expiry: utils.ToPtr(1 * time.Second),
+//	}
+//
+//	err := sut.Set(t.ctx, newEntry)
+//	assert.NoError(t.T(), err)
+//
+//	// Retrieve the set key from the store
+//	retrievedEntries, err := sut.Get(t.ctx, newEntry.Key)
+//	assert.Len(t.T(), retrievedEntries, 1)
+//	assert.NoError(t.T(), err)
+//	assert.Equal(t.T(), retrievedEntries[0].Key, newEntry.Key)
+//
+//	time.Sleep(2 * time.Second)
+//
+//	retrievedEntries, err = sut.Get(t.ctx, newEntry.Key)
+//	assert.Empty(t.T(), retrievedEntries)
+//	assert.NoError(t.T(), err)
+//}

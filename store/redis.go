@@ -2,7 +2,6 @@ package store
 
 import (
 	"context"
-	"fmt"
 	"strconv"
 	"time"
 
@@ -104,9 +103,13 @@ for i, key in ipairs(KEYS) do
 
     -- Check if the timestamp has been modified. If it has, some other process has modified the state concurrently
     if not currentTimestamp or currentTimestamp == expectedTimestamp then
-		redis.call('HMSET', key, 'value', value, 'timestamp', nextTimestamp)
-		if expire > 0 then
-			redis.call('EXPIRE', key, expire)  -- Set the expiration time for the key
+		if value == "nil" then
+			redis.call('DEL', key)
+		else
+			redis.call('HMSET', key, 'value', value, 'timestamp', nextTimestamp)
+			if expire > 0 then
+				redis.call('EXPIRE', key, expire)  -- Set the expiration time for the key
+			end
 		end
     else
 		conflictCount = conflictCount + 1
@@ -128,9 +131,20 @@ func (r *RedisStore[TState]) Set(ctx context.Context, entries ...StateEntry[TSta
 
 	for _, entry := range entries {
 		keys = append(keys, entry.Key)
-		state := &stateEnvelope[TState]{V: entry.State}
-		stateJson, err := r.marshaller.Serialize(state)
-		fmt.Println(err)
+
+		var stateJson string = "nil"
+		var err error
+
+		if entry.State != nil {
+			stateJson, err = r.marshaller.Serialize(
+				&stateEnvelope[TState]{V: entry.State},
+			)
+		}
+
+		if err != nil {
+			return err
+		}
+
 		var currentTimestamp int64 = -1
 		if entry.Timestamp != nil {
 			currentTimestamp = *entry.Timestamp
@@ -176,5 +190,5 @@ type redisGetResult struct {
 }
 
 type stateEnvelope[TState any] struct {
-	V TState
+	V *TState
 }
