@@ -205,7 +205,7 @@ func Operation[TIn any, TOut any](
 					defer opWg.Done()
 					now := time.Now()
 					operation(ctx, poolStream, downstream)
-					opts.metrics.Timing("operation_duration", time.Since(now))
+					opts.metrics.Timing(opts.activity, "operation_duration", time.Since(now))
 				}(poolStream, downstream)
 			}
 
@@ -352,9 +352,9 @@ func (o *Observable[T]) Connect() {
 			case <-o.opts.ctx.Done():
 				now := time.Now()
 				o.downstream.Error(o.opts.ctx.Err())
-				o.metrics.Timing("item_backpressure", time.Since(now))
-				o.metrics.Incr("item_emitted", 1)
-				o.metrics.Incr("error_emitted", 1)
+				o.metrics.Timing(o.opts.activity, "item_backpressure", time.Since(now))
+				o.metrics.Incr(o.opts.activity, "item_emitted", 1)
+				o.metrics.Incr(o.opts.activity, "error_emitted", 1)
 				return
 			case item, ok := <-upstream.Read():
 				if !ok {
@@ -364,28 +364,28 @@ func (o *Observable[T]) Connect() {
 				if item.Error() != nil && o.opts.errorStrategy == StopOnError {
 					now := time.Now()
 					o.downstream.Send(item)
-					o.metrics.Timing("item_backpressure", time.Since(now))
-					o.metrics.Incr("item_emitted", 1)
-					o.metrics.Incr("error_emitted", 1)
+					o.metrics.Timing(o.opts.activity, "item_backpressure", time.Since(now))
+					o.metrics.Incr(o.opts.activity, "item_emitted", 1)
+					o.metrics.Incr(o.opts.activity, "error_emitted", 1)
 					return
 				}
 
 				if o.opts.backpressureStrategy == Drop {
 					now := time.Now()
 					ok := o.downstream.TrySend(item)
-					o.metrics.Timing("item_backpressure", time.Since(now))
+					o.metrics.Timing(o.opts.activity, "item_backpressure", time.Since(now))
 					if ok {
-						o.metrics.Incr("item_emitted", 1)
-						o.metrics.Incr("value_emitted", 1)
+						o.metrics.Incr(o.opts.activity, "item_emitted", 1)
+						o.metrics.Incr(o.opts.activity, "value_emitted", 1)
 					} else {
-						o.metrics.Incr("value_dropped", 1)
+						o.metrics.Incr(o.opts.activity, "value_dropped", 1)
 					}
 				} else {
 					now := time.Now()
 					o.downstream.Send(item)
-					o.metrics.Timing("item_backpressure", time.Since(now))
-					o.metrics.Incr("item_emitted", 1)
-					o.metrics.Incr("value_emitted", 1)
+					o.metrics.Timing(o.opts.activity, "item_backpressure", time.Since(now))
+					o.metrics.Incr(o.opts.activity, "item_emitted", 1)
+					o.metrics.Incr(o.opts.activity, "value_emitted", 1)
 				}
 			}
 		}
@@ -481,6 +481,10 @@ func (o *Observable[T]) cloneOptions() observableOptions {
 		ctx:             o.opts.ctx,
 		errorStrategy:   o.opts.errorStrategy,
 		publishStrategy: o.opts.publishStrategy,
+		// TODO: This is a temporary requirement until observables support global middlewares
+		metrics: o.opts.metrics,
+		// TODO: This is a temporary requirement until observables support global middlewares
+		logger: o.opts.logger,
 	}
 }
 
