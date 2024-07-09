@@ -20,10 +20,10 @@ func Map[TIn, TOut any](mapper MapFunc[TIn, TOut], opts ...observe.ObservableOpt
 
 		return observe.Operation[TIn, TOut](
 			source,
-			func(ctx observe.Context, upstream stream.Reader[TIn], downstream stream.Writer[TOut]) {
+			func(ctx observe.Context, upstream streams.Reader[TIn], downstream streams.Writer[TOut]) {
 				for item := range upstream.Read() {
 					switch item.Kind() {
-					case stream.NextKind:
+					case streams.NextKind:
 						output, err := mapper(item.Value(), index)
 						index++
 
@@ -33,7 +33,7 @@ func Map[TIn, TOut any](mapper MapFunc[TIn, TOut], opts ...observe.ObservableOpt
 						}
 
 						downstream.Write(output)
-					case stream.ErrorKind:
+					case streams.ErrorKind:
 						downstream.Error(item.Error())
 					}
 				}

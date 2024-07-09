@@ -13,7 +13,7 @@ func Print[T any](label string, opts ...observe.ObservableOption) observe.Operat
 	return func(source *observe.Observable[T]) *observe.Observable[T] {
 		return observe.Operation[T, T](
 			source,
-			func(ctx observe.Context, upstream stream.Reader[T], downstream stream.Writer[T]) {
+			func(ctx observe.Context, upstream streams.Reader[T], downstream streams.Writer[T]) {
 				for i := range upstream.Read() {
 					fmt.Println(label, i)
 					downstream.Send(i)

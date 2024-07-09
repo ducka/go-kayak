@@ -16,7 +16,7 @@ func Throttle[T any](flowRate int64, perDuration time.Duration, opts ...observe.
 	return func(source *observe.Observable[T]) *observe.Observable[T] {
 		return observe.Operation[T, T](
 			source,
-			func(ctx observe.Context, upstream stream.Reader[T], downstream stream.Writer[T]) {
+			func(ctx observe.Context, upstream streams.Reader[T], downstream streams.Writer[T]) {
 				for i := range upstream.Read() {
 					downstream.Send(i)
 					time.Sleep(time.Duration(int64(perDuration) / flowRate))

@@ -321,7 +321,7 @@ func MergeMap10[TIn1, TIn2, TIn3, TIn4, TIn5, TIn6, TIn7, TIn8, TIn9, TIn10, TOu
 	return output
 }
 
-func processMergeInput[TIn any, TOut any](input stream.Notification[TIn], downstream stream.Writer[TOut], callback func(TIn) (TOut, error)) {
+func processMergeInput[TIn any, TOut any](input streams.Notification[TIn], downstream streams.Writer[TOut], callback func(TIn) (TOut, error)) {
 	if input.IsError() {
 		downstream.Error(input.Error())
 		return

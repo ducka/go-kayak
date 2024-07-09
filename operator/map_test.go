@@ -23,10 +23,10 @@ func TestMap(t *testing.T) {
 
 			t.Run("Then the emitted integers should now be strings", func(t *testing.T) {
 				assert.EqualValues(t,
-					[]stream.Notification[string]{
-						stream.Next("1"),
-						stream.Next("2"),
-						stream.Next("3"),
+					[]streams.Notification[string]{
+						streams.Next("1"),
+						streams.Next("2"),
+						streams.Next("3"),
 					},
 					m.ToResult(),
 				)
@@ -50,10 +50,10 @@ func TestMap(t *testing.T) {
 
 			t.Run("Then the emitted notifications should be a mixture of strings and errors", func(t *testing.T) {
 				assert.EqualValues(t,
-					[]stream.Notification[string]{
-						stream.Next("1"),
-						stream.Error[string](err),
-						stream.Next("3"),
+					[]streams.Notification[string]{
+						streams.Next("1"),
+						streams.Error[string](err),
+						streams.Next("3"),
 					},
 					m.ToResult(),
 				)

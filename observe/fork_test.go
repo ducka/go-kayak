@@ -9,8 +9,8 @@ import (
 )
 
 type testForkResults struct {
-	actual1 []stream.Notification[int]
-	actual2 []stream.Notification[int]
+	actual1 []streams.Notification[int]
+	actual2 []streams.Notification[int]
 }
 
 func TestFork(t *testing.T) {

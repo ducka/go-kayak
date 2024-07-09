@@ -25,14 +25,14 @@ func merge[T any](
 	opts ...ObservableOption,
 ) *Observable[T] {
 	return newObservable[T](
-		func(downstream stream.Writer[T], opts observableOptions) {
+		func(downstream streams.Writer[T], opts observableOptions) {
 			mu := &sync.Mutex{}
 			startWg := &sync.WaitGroup{}
 			startWg.Add(1)
 			closeWg := &sync.WaitGroup{}
 			closeWg.Add(len(observables))
 
-			errors := make([]stream.Notification[T], 0)
+			errors := make([]streams.Notification[T], 0)
 
 			f := func(o *Observable[T]) {
 				defer closeWg.Done()

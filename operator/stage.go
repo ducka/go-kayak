@@ -30,8 +30,8 @@ func Stage[TIn, TOut any](keySelector KeySelectorFunc[TIn], stateMapper StateMap
 	return func(source *observe.Observable[TIn]) *observe.Observable[TOut] {
 		return observe.Operation[TIn, TOut](
 			source,
-			func(ctx observe.Context, upstream stream.Reader[TIn], downstream stream.Writer[TOut]) {
-				batchStream := stream.NewStream[[]TIn]()
+			func(ctx observe.Context, upstream streams.Reader[TIn], downstream streams.Writer[TOut]) {
+				batchStream := streams.NewStream[[]TIn]()
 				// TODO: make batch size a configurable setting
 				batcher := newBatcher[TIn](10, utils.ToPtr(time.Millisecond*200))
 				stager := newStager[TIn, TOut](keySelector, stateMapper, stateStore)
@@ -76,7 +76,7 @@ func newStager[TIn, TOut any](keySelector KeySelectorFunc[TIn], stateMapper Stat
 		return keys, mappedItems
 	}
 
-	return func(ctx observe.Context, upstream stream.Reader[[]TIn], downstream stream.Writer[TOut]) {
+	return func(ctx observe.Context, upstream streams.Reader[[]TIn], downstream streams.Writer[TOut]) {
 		for batch := range upstream.Read() {
 			if batch.IsError() {
 				downstream.Error(batch.Error())

@@ -14,7 +14,7 @@ func Filter[T any](predicate PredicateFunc[T], opts ...observe.ObservableOption)
 	return func(source *observe.Observable[T]) *observe.Observable[T] {
 		return observe.Operation[T, T](
 			source,
-			func(ctx observe.Context, upstream stream.Reader[T], downstream stream.Writer[T]) {
+			func(ctx observe.Context, upstream streams.Reader[T], downstream streams.Writer[T]) {
 				for i := range upstream.Read() {
 					// If the element has a value and satisfies the predicate, emit it; otherwise if the
 					// element is an error, emit it. All others must be filtered out.

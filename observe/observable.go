@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/ducka/go-kayak/stream"
+	"github.com/ducka/go-kayak/streams"
 	"github.com/ducka/go-kayak/utils"
 	"github.com/robfig/cron/v3"
 )
@@ -15,8 +16,8 @@ type (
 	OnErrorFunc                      func(error)
 	OnCompleteFunc                   func(reason CompleteReason, err error)
 	OnNextFunc[T any]                func(v T)
-	ProducerFunc[T any]              func(streamWriter stream.Writer[T])
-	OperationFunc[TIn any, TOut any] func(Context, stream.Reader[TIn], stream.Writer[TOut])
+	ProducerFunc[T any]              func(streamWriter streams.Writer[T])
+	OperationFunc[TIn any, TOut any] func(Context, streams.Reader[TIn], streams.Writer[TOut])
 	StopFunc                         func()
 
 	ErrorStrategy        string
@@ -55,7 +56,7 @@ const (
 // Producer observes items produced by a callback function
 func Producer[T any](producer ProducerFunc[T], opts ...ObservableOption) *Observable[T] {
 	return newObservable[T](
-		func(streamWriter stream.Writer[T], opts observableOptions) {
+		func(streamWriter streams.Writer[T], opts observableOptions) {
 			producer(streamWriter)
 		},
 		nil,
@@ -65,14 +66,14 @@ func Producer[T any](producer ProducerFunc[T], opts ...ObservableOption) *Observ
 
 // Empty is an observable that emits nothing. This observable completes immediately.
 func Empty[T any](opts ...ObservableOption) *Observable[T] {
-	return newObservable[T](func(streamWriter stream.Writer[T], opts observableOptions) {
+	return newObservable[T](func(streamWriter streams.Writer[T], opts observableOptions) {
 		streamWriter.Close()
 	}, nil, opts...)
 }
 
 // Array is an observable that emits items from an array
 func Array[T any](items []T, opts ...ObservableOption) *Observable[T] {
-	return newObservable[T](func(streamWriter stream.Writer[T], opts observableOptions) {
+	return newObservable[T](func(streamWriter streams.Writer[T], opts observableOptions) {
 		for _, item := range items {
 			streamWriter.Write(item)
 		}
@@ -82,7 +83,7 @@ func Array[T any](items []T, opts ...ObservableOption) *Observable[T] {
 
 // Value is an observable that emits a single item
 func Value[T any](value T, opts ...ObservableOption) *Observable[T] {
-	return newObservable[T](func(streamWriter stream.Writer[T], opts observableOptions) {
+	return newObservable[T](func(streamWriter streams.Writer[T], opts observableOptions) {
 		streamWriter.Write(value)
 	}, nil, opts...)
 }
@@ -104,7 +105,7 @@ func Cron(cronPattern string, opts ...ObservableOption) (*Observable[time.Time],
 	}
 
 	return newObservable[time.Time](
-		func(streamWriter stream.Writer[time.Time], opts observableOptions) {
+		func(streamWriter streams.Writer[time.Time], opts observableOptions) {
 
 			for {
 				next := schedule.Next(time.Now())
@@ -130,7 +131,7 @@ func Timer(interval time.Duration, opts ...ObservableOption) (*Observable[time.T
 		ticker.Stop()
 	}
 	return newObservable[time.Time](
-		func(streamWriter stream.Writer[time.Time], opts observableOptions) {
+		func(streamWriter streams.Writer[time.Time], opts observableOptions) {
 			defer ticker.Stop()
 			for {
 				select {
@@ -148,7 +149,7 @@ func Timer(interval time.Duration, opts ...ObservableOption) (*Observable[time.T
 
 // Range observes a range of generated integers
 func Range(start, count int, opts ...ObservableOption) *Observable[int] {
-	return newObservable[int](func(streamWriter stream.Writer[int], opts observableOptions) {
+	return newObservable[int](func(streamWriter streams.Writer[int], opts observableOptions) {
 		for i := start; i < start+count; i++ {
 			streamWriter.Write(i)
 		}
@@ -156,13 +157,13 @@ func Range(start, count int, opts ...ObservableOption) *Observable[int] {
 }
 
 // Stream observes items that are written to the Writer produced by this function
-func Stream[T any](opts ...ObservableOption) (stream.Writer[T], *Observable[T]) {
+func Stream[T any](opts ...ObservableOption) (streams.Writer[T], *Observable[T]) {
 	return newStreamObservable[T](nil, opts...)
 }
 
 // Sequence observes an array of values
 func Sequence[T any](sequence []T, opts ...ObservableOption) *Observable[T] {
-	return newObservable[T](func(streamWriter stream.Writer[T], opts observableOptions) {
+	return newObservable[T](func(streamWriter streams.Writer[T], opts observableOptions) {
 		for _, item := range sequence {
 			streamWriter.Write(item)
 		}
@@ -178,7 +179,7 @@ func Operation[TIn any, TOut any](
 	opts ...ObservableOption,
 ) *Observable[TOut] {
 	observable := newObservable[TOut](
-		func(downstream stream.Writer[TOut], opts observableOptions) {
+		func(downstream streams.Writer[TOut], opts observableOptions) {
 			opWg := &sync.WaitGroup{}
 			poolWg := &sync.WaitGroup{}
 			upstream := source.ToStream()
@@ -193,15 +194,15 @@ func Operation[TIn any, TOut any](
 			}
 
 			// Initialise the pool of operations to currently process the upstream
-			pool := make(chan *stream.Stream[TIn], opts.poolSize)
-			poolStreamsToClose := make([]*stream.Stream[TIn], opts.poolSize)
+			pool := make(chan *streams.Stream[TIn], opts.poolSize)
+			poolStreamsToClose := make([]*streams.Stream[TIn], opts.poolSize)
 			for i := 0; i < opts.poolSize; i++ {
-				poolStream := stream.NewStream[TIn]()
+				poolStream := streams.NewStream[TIn]()
 				pool <- poolStream
 				poolStreamsToClose[i] = poolStream
 
 				opWg.Add(1)
-				go func(poolStream stream.Reader[TIn], downstream stream.Writer[TOut]) {
+				go func(poolStream streams.Reader[TIn], downstream streams.Writer[TOut]) {
 					defer opWg.Done()
 					now := time.Now()
 					operation(ctx, poolStream, downstream)
@@ -217,7 +218,7 @@ func Operation[TIn any, TOut any](
 				case nextStream := <-pool:
 					poolWg.Add(1)
 
-					go func(item stream.Notification[TIn], nextStream *stream.Stream[TIn], pool chan *stream.Stream[TIn]) {
+					go func(item streams.Notification[TIn], nextStream *streams.Stream[TIn], pool chan *streams.Stream[TIn]) {
 						defer poolWg.Done()
 
 						nextStream.Send(item)
@@ -259,12 +260,12 @@ more efficient direct from stream observable should probably be some sort of spe
 a stream writer.
 */
 
-func newStreamObservable[T any](parents []upstreamObservable, opts ...ObservableOption) (stream.Writer[T], *Observable[T]) {
-	source := stream.NewStream[T]()
+func newStreamObservable[T any](parents []upstreamObservable, opts ...ObservableOption) (streams.Writer[T], *Observable[T]) {
+	source := streams.NewStream[T]()
 
 	return source,
 		newObservable[T](
-			func(streamWriter stream.Writer[T], options observableOptions) {
+			func(streamWriter streams.Writer[T], options observableOptions) {
 				for item := range source.Read() {
 					streamWriter.Send(item)
 				}
@@ -274,7 +275,7 @@ func newStreamObservable[T any](parents []upstreamObservable, opts ...Observable
 		)
 }
 
-func newObservable[T any](producer func(streamWriter stream.Writer[T], options observableOptions), parents []upstreamObservable, options ...ObservableOption) *Observable[T] {
+func newObservable[T any](producer func(streamWriter streams.Writer[T], options observableOptions), parents []upstreamObservable, options ...ObservableOption) *Observable[T] {
 	opts := newOptions()
 
 	// Propagate observableOptions down the observable chain
@@ -291,7 +292,7 @@ func newObservable[T any](producer func(streamWriter stream.Writer[T], options o
 		mu:         new(sync.Mutex),
 		opts:       opts,
 		producer:   producer,
-		downstream: stream.NewStream[T](),
+		downstream: streams.NewStream[T](),
 		parents:    parents,
 		subs:       newSubscribers[T](),
 		metrics:    opts.metrics,
@@ -314,11 +315,11 @@ type Observable[T any] struct {
 	mu   *sync.Mutex
 	opts observableOptions
 	// producer is a function that produces the upstream stream of items to be observed
-	producer func(stream.Writer[T], observableOptions)
+	producer func(streams.Writer[T], observableOptions)
 	// parent is the observable that has produced the upstream downstream of items
 	parents []upstreamObservable
 	// downstream is the stream that will Send items to the observer
-	downstream *stream.Stream[T]
+	downstream *streams.Stream[T]
 	// connected is a flag that indicates whether the observable has begun observing items from the upstream
 	connected bool
 	subs      *subscribers[T]
@@ -342,7 +343,7 @@ func (o *Observable[T]) Connect() {
 		}
 	}
 
-	upstream := stream.NewStream[T](o.opts.buffer)
+	upstream := streams.NewStream[T](o.opts.buffer)
 
 	go func() {
 		defer o.downstream.Close()
@@ -400,14 +401,14 @@ func (o *Observable[T]) Connect() {
 }
 
 // ToStream returns a downstream Reader so the observable can be observed asynchronously
-func (o *Observable[T]) ToStream() stream.Reader[T] {
+func (o *Observable[T]) ToStream() streams.Reader[T] {
 	return o.downstream
 }
 
 // ToResult synchronously observes the observable and returns the emitted items. This function will block until the observable
 // completes observing the upstream sequence.
-func (o *Observable[T]) ToResult() []stream.Notification[T] {
-	notifications := make([]stream.Notification[T], 0)
+func (o *Observable[T]) ToResult() []streams.Notification[T] {
+	notifications := make([]streams.Notification[T], 0)
 	wg := &sync.WaitGroup{}
 	wg.Add(1)
 

@@ -11,7 +11,7 @@ import (
 
 func TestSort(t *testing.T) {
 	t.Run("When emitting an unordered sequence including errors", func(t *testing.T) {
-		ob := observe.Producer(func(downstream stream.Writer[int]) {
+		ob := observe.Producer(func(downstream streams.Writer[int]) {
 			downstream.Write(4)
 			downstream.Write(2)
 			downstream.Error(errors.New("error1"))
@@ -29,13 +29,13 @@ func TestSort(t *testing.T) {
 
 			t.Run("Then the sequence should be sorted with errors with no values at the end", func(t *testing.T) {
 				assert.Equal(t,
-					[]stream.Notification[int]{
-						stream.Next(1),
-						stream.Next(2),
-						stream.Next(4),
-						stream.Next(5),
-						stream.Error[int](errors.New("error1")),
-						stream.Error[int](errors.New("error2")),
+					[]streams.Notification[int]{
+						streams.Next(1),
+						streams.Next(2),
+						streams.Next(4),
+						streams.Next(5),
+						streams.Error[int](errors.New("error1")),
+						streams.Error[int](errors.New("error2")),
 					},
 					actual,
 				)

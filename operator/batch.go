@@ -32,7 +32,7 @@ func batchOperation[T any](batchSize int, flushTimeout *time.Duration, opts ...o
 }
 
 func newBatcher[T any](batchSize int, flushTimeout *time.Duration) observe.OperationFunc[T, []T] {
-	return func(ctx observe.Context, upstream stream.Reader[T], downstream stream.Writer[[]T]) {
+	return func(ctx observe.Context, upstream streams.Reader[T], downstream streams.Writer[[]T]) {
 		autoFlush := true
 		maxFlushTimeout := time.Duration(math.MaxInt64)
 

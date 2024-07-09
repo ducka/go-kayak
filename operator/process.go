@@ -6,7 +6,7 @@ import (
 )
 
 type (
-	ProcessorFunc[TIn, TOut any] func(ctx observe.Context, upstream stream.Reader[TIn], downstream stream.Writer[TOut])
+	ProcessorFunc[TIn, TOut any] func(ctx observe.Context, upstream streams.Reader[TIn], downstream streams.Writer[TOut])
 )
 
 // Process is an operator that gives direct access to the upstream and downstream streams.
@@ -19,7 +19,7 @@ func Process[TIn, TOut any](processor ProcessorFunc[TIn, TOut], opts ...observe.
 
 		return observe.Operation[TIn, TOut](
 			source,
-			func(ctx observe.Context, upstream stream.Reader[TIn], downstream stream.Writer[TOut]) {
+			func(ctx observe.Context, upstream streams.Reader[TIn], downstream streams.Writer[TOut]) {
 				processor(ctx, upstream, downstream)
 			},
 			opts...,

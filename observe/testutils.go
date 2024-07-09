@@ -15,15 +15,15 @@ func GenerateIntSequence(start, sequenceSize int) []int {
 	return sequence
 }
 
-func ConvertToNotifications[T any](sequence ...T) []stream.Notification[T] {
-	notifications := make([]stream.Notification[T], len(sequence))
+func ConvertToNotifications[T any](sequence ...T) []streams.Notification[T] {
+	notifications := make([]streams.Notification[T], len(sequence))
 	for i, item := range sequence {
-		notifications[i] = stream.Next(item)
+		notifications[i] = streams.Next(item)
 	}
 	return notifications
 }
 
-func ConvertToValues[T any](notifications ...stream.Notification[T]) []T {
+func ConvertToValues[T any](notifications ...streams.Notification[T]) []T {
 	values := make([]T, 0, len(notifications))
 	for _, n := range notifications {
 		values = append(values, n.Value())

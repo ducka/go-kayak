@@ -1,4 +1,4 @@
-package stream
+package streams
 
 // NotificationKind
 type NotificationKind string
