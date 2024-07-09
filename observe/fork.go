@@ -1,7 +1,7 @@
 package observe
 
 import (
-	"github.com/ducka/go-kayak/stream"
+	"github.com/ducka/go-kayak/streams"
 )
 
 // Fork splits the producer observable into multiple downstream observables.

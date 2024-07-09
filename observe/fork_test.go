@@ -4,7 +4,7 @@ import (
 	"sync"
 	"testing"
 
-	"github.com/ducka/go-kayak/stream"
+	"github.com/ducka/go-kayak/streams"
 	"github.com/stretchr/testify/assert"
 )
 

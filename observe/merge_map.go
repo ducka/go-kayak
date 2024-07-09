@@ -1,7 +1,7 @@
 package observe
 
 import (
-	"github.com/ducka/go-kayak/stream"
+	"github.com/ducka/go-kayak/streams"
 )
 
 func MergeMap2[TIn1, TIn2, TOut any](

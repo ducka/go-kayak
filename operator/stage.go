@@ -10,7 +10,7 @@ import (
 	"github.com/avast/retry-go/v4"
 	"github.com/ducka/go-kayak/observe"
 	"github.com/ducka/go-kayak/store"
-	"github.com/ducka/go-kayak/stream"
+	"github.com/ducka/go-kayak/streams"
 	"github.com/ducka/go-kayak/utils"
 )
 

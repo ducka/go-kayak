@@ -2,7 +2,7 @@ package operator
 
 import (
 	"github.com/ducka/go-kayak/observe"
-	"github.com/ducka/go-kayak/stream"
+	"github.com/ducka/go-kayak/streams"
 )
 
 type (

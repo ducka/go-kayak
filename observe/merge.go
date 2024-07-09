@@ -3,7 +3,7 @@ package observe
 import (
 	"sync"
 
-	"github.com/ducka/go-kayak/stream"
+	"github.com/ducka/go-kayak/streams"
 )
 
 // Merge combines multiple observables into a single observable.The

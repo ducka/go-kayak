@@ -5,7 +5,7 @@ import (
 	"time"
 
 	"github.com/ducka/go-kayak/observe"
-	"github.com/ducka/go-kayak/stream"
+	"github.com/ducka/go-kayak/streams"
 )
 
 // Batch batches up Items from the observable into slices of the specified size.

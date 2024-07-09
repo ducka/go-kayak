@@ -7,7 +7,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/ducka/go-kayak/stream"
+	"github.com/ducka/go-kayak/streams"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/mock"
 )

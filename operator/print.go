@@ -4,7 +4,7 @@ import (
 	"fmt"
 
 	"github.com/ducka/go-kayak/observe"
-	"github.com/ducka/go-kayak/stream"
+	"github.com/ducka/go-kayak/streams"
 )
 
 // Print logs the emitted item out via console

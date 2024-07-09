@@ -4,7 +4,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/ducka/go-kayak/stream"
+	"github.com/ducka/go-kayak/streams"
 )
 
 func GenerateIntSequence(start, sequenceSize int) []int {

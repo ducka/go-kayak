@@ -6,7 +6,6 @@ import (
 	"sync"
 	"time"
 
-	"github.com/ducka/go-kayak/stream"
 	"github.com/ducka/go-kayak/streams"
 	"github.com/ducka/go-kayak/utils"
 	"github.com/robfig/cron/v3"

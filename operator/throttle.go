@@ -4,7 +4,7 @@ import (
 	"time"
 
 	"github.com/ducka/go-kayak/observe"
-	"github.com/ducka/go-kayak/stream"
+	"github.com/ducka/go-kayak/streams"
 )
 
 // Throttle throttles the rate of Items emitted by the observable to the specified flow rate.
