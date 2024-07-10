@@ -373,8 +373,11 @@ func (o *Observable[T]) Connect() {
 				if o.opts.backpressureStrategy == Drop {
 					now := time.Now()
 					ok := o.downstream.TrySend(item)
-					o.metrics.Timing(o.opts.activity, "item_backpressure", time.Since(now))
 					if ok {
+						// Only record backpressure metrics if the item was successfully sent, otherwise you'll
+						// be measuring backpressure for dropped items which would bring backpressure down to zero,
+						// making the metric useless
+						o.metrics.Timing(o.opts.activity, "item_backpressure", time.Since(now))
 						o.metrics.Incr(o.opts.activity, "item_emitted", 1)
 						o.metrics.Incr(o.opts.activity, "value_emitted", 1)
 					} else {
