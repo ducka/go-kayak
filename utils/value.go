@@ -37,3 +37,11 @@ func MapToArray[K comparable, V any](items map[K]V) []V {
 	}
 	return result
 }
+
+func ChanToArray[T any](ch <-chan T) []T {
+	var result []T
+	for item := range ch {
+		result = append(result, item)
+	}
+	return result
+}

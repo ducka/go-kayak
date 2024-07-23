@@ -2,19 +2,29 @@ package store
 
 import (
 	"context"
+	"regexp"
 	"strconv"
+	"sync"
 	"time"
 
 	"github.com/ducka/go-kayak/utils"
 	"github.com/redis/go-redis/v9"
 )
 
+var (
+	redisPartitionKeyRegex = regexp.MustCompile(`{([^{}]+)}`)
+)
+
 type RedisStore[TState any] struct {
-	client     *redis.Client
+	client     redis.UniversalClient
 	marshaller utils.Marshaller
 }
 
-func NewRedisStore[TState any](client *redis.Client) *RedisStore[TState] {
+func NewRedisStore[TState any](client redis.UniversalClient) *RedisStore[TState] {
+	if client == nil {
+		panic("client should not be nil")
+	}
+
 	return &RedisStore[TState]{
 		client:     client,
 		marshaller: utils.NewJsonMarshaller(),
@@ -48,45 +58,62 @@ return cjson.encode(results)
 )
 
 func (r *RedisStore[TState]) Get(ctx context.Context, keys ...string) ([]StateEntry[TState], error) {
-	cmd := r.client.Eval(ctx, getStateLuaScript, keys)
+	errCh := make(chan error)
+	stateEntriesCh := make(chan StateEntry[TState], len(keys))
 
-	redisResult, err := cmd.Result()
-	redisResultJson := redisResult.(string)
+	done := executeRedisClusterBulkOperation(
+		keys,
+		func(key string) string { return key },
+		func(partitionedKeys []string) {
+			cmd := r.client.Eval(ctx, getStateLuaScript, partitionedKeys)
 
-	if err != nil {
+			redisResult, err := cmd.Result()
+
+			if err != nil {
+				errCh <- err
+				return
+			}
+
+			redisResultJson := redisResult.(string)
+
+			getResults := make(map[string]redisGetResult)
+
+			err = r.marshaller.Deserialize(redisResultJson, &getResults)
+
+			if err != nil {
+				errCh <- err
+				return
+			}
+
+			for key, value := range getResults {
+				timestamp, _ := strconv.ParseInt(value.Timestamp, 10, 64)
+				stateEntry := StateEntry[TState]{
+					Key:       key,
+					Timestamp: utils.ToPtr(timestamp),
+				}
+				state := &stateEnvelope[TState]{}
+
+				err = r.marshaller.Deserialize(value.State, state)
+
+				if err != nil {
+					errCh <- err
+					return
+				}
+
+				stateEntry.State = state.V
+
+				stateEntriesCh <- stateEntry
+			}
+		},
+	)
+
+	select {
+	case <-done:
+		close(stateEntriesCh)
+		return utils.ChanToArray(stateEntriesCh), nil
+	case err := <-errCh:
 		return nil, err
 	}
-
-	getResults := make(map[string]redisGetResult)
-
-	err = r.marshaller.Deserialize(redisResultJson, &getResults)
-
-	if err != nil {
-		return nil, err
-	}
-
-	stateEntries := make([]StateEntry[TState], 0, len(keys))
-
-	for key, value := range getResults {
-		timestamp, _ := strconv.ParseInt(value.Timestamp, 10, 64)
-		stateEntry := StateEntry[TState]{
-			Key:       key,
-			Timestamp: utils.ToPtr(timestamp),
-		}
-		state := &stateEnvelope[TState]{}
-
-		err = r.marshaller.Deserialize(value.State, state)
-
-		if err != nil {
-			return nil, err
-		}
-
-		stateEntry.State = state.V
-
-		stateEntries = append(stateEntries, stateEntry)
-	}
-
-	return stateEntries, nil
 }
 
 const (
@@ -126,62 +153,141 @@ return cjson.encode(conflicts)
 )
 
 func (r *RedisStore[TState]) Set(ctx context.Context, entries ...StateEntry[TState]) error {
-	keys := make([]string, 0, len(entries))
-	args := make([]interface{}, 0, len(entries)*3)
+	errCh := make(chan error, len(entries))
 
-	for _, entry := range entries {
-		keys = append(keys, entry.Key)
+	done := executeRedisClusterBulkOperation(
+		entries,
+		func(entry StateEntry[TState]) string { return entry.Key },
+		func(partitionedEntries []StateEntry[TState]) {
+			keys := make([]string, 0, len(partitionedEntries))
+			args := make([]interface{}, 0, len(partitionedEntries)*3)
 
-		var stateJson string = "nil"
-		var err error
+			for _, entry := range partitionedEntries {
+				keys = append(keys, entry.Key)
 
-		if entry.State != nil {
-			stateJson, err = r.marshaller.Serialize(
-				&stateEnvelope[TState]{V: entry.State},
-			)
-		}
+				var stateJson string = "nil"
+				var err error
 
-		if err != nil {
-			return err
-		}
+				if entry.State != nil {
+					stateJson, err = r.marshaller.Serialize(
+						&stateEnvelope[TState]{V: entry.State},
+					)
+				}
 
-		var currentTimestamp int64 = -1
-		if entry.Timestamp != nil {
-			currentTimestamp = *entry.Timestamp
-		}
+				if err != nil {
+					errCh <- err
+				}
 
-		var expiration int64 = -1
-		if entry.Expiry != nil {
-			expiration = int64(entry.Expiry.Seconds())
-		}
+				var currentTimestamp int64 = -1
+				if entry.Timestamp != nil {
+					currentTimestamp = *entry.Timestamp
+				}
 
-		nextTimestamp := time.Now().UnixNano()
+				var expiration int64 = -1
+				if entry.Expiry != nil {
+					expiration = int64(entry.Expiry.Seconds())
+				}
 
-		args = append(args, stateJson, currentTimestamp, expiration, nextTimestamp)
-	}
+				nextTimestamp := time.Now().UnixNano()
 
-	setCmd := r.client.Eval(ctx, setStateLuaScript, keys, args...)
-	setCmdResp, err := setCmd.Result()
+				args = append(args, stateJson, currentTimestamp, expiration, nextTimestamp)
+			}
 
-	if err != nil {
+			setCmd := r.client.Eval(ctx, setStateLuaScript, keys, args...)
+			setCmdResp, err := setCmd.Result()
+
+			if err != nil {
+				errCh <- err
+				return
+			}
+
+			conflicts := make([]string, 0)
+
+			err = r.marshaller.Deserialize(setCmdResp.(string), &conflicts)
+
+			if err != nil {
+				errCh <- err
+				return
+			}
+
+			if len(conflicts) > 0 {
+				errCh <- &StateStoreConflict{
+					conflicts: conflicts,
+				}
+				return
+			}
+		},
+	)
+
+	select {
+	case <-done:
+		return nil
+	case err := <-errCh:
 		return err
 	}
+}
 
-	conflicts := make([]string, 0)
+func assignHashSlot(key string) uint16 {
+	k := redisPartitionKeyRegex.FindStringSubmatch(key)
 
-	err = r.marshaller.Deserialize(setCmdResp.(string), &conflicts)
-
-	if err != nil {
-		return err
+	if len(k) > 0 {
+		key = k[1]
 	}
 
-	if len(conflicts) > 0 {
-		return &StateStoreConflict{
-			conflicts: conflicts,
+	return Crc16(key) % 16384
+}
+
+// TODO: i think you're going to need to execute CLUSTER SHARDS to cache a map of slots for each node. Your calchlateHashSlot
+// function could then be used to determine which node to send the request to.
+// You would need to keep this hash map of slots up to date as redirects are encountered from redis.
+
+// executeRedisClusterBulkOperation executes a bulk operation on a redis cluster. It does this by partitioning the supplied
+// keys according to Redis's hash slot algorithm. It then executes the operation for each partition in parallel.
+func executeRedisClusterBulkOperation[T any](
+	itemsToPartition []T,
+	partitioningKeySelector func(item T) string,
+	partitionedOperation func(partitionedItems []T),
+) chan struct{} {
+	partitions := make(map[uint16][]T)
+	done := make(chan struct{})
+
+	for _, item := range itemsToPartition {
+		partitioningKey := partitioningKeySelector(item)
+		hashTag := assignHashSlot(partitioningKey)
+		partitions[hashTag] = append(partitions[hashTag], item)
+	}
+
+	partitionLen := len(partitions)
+
+	if partitionLen == 0 {
+		close(done)
+		return done
+	} else if partitionLen == 1 {
+		// If there is only one partition, there's no need to execute the operation in a go routine
+		for _, v := range partitions {
+			partitionedOperation(v)
 		}
+		close(done)
+		return done
 	}
 
-	return nil
+	// If there are more than one partition, execute an operation for each partition in parallel
+	wg := &sync.WaitGroup{}
+	wg.Add(len(partitions))
+
+	for hashTag, partitionedItems := range partitions {
+		go func(hashTag uint16, partitionedItems []T) {
+			defer wg.Done()
+			partitionedOperation(partitionedItems)
+		}(hashTag, partitionedItems)
+	}
+
+	go func() {
+		wg.Wait()
+		close(done)
+	}()
+
+	return done
 }
 
 type redisGetResult struct {
