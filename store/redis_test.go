@@ -10,7 +10,7 @@ import (
 func TestRedisStoreTestSuite(t *testing.T) {
 	testSuite := NewStoreTestSuite(func() StateStore[string] {
 		rdb := redis.NewClient(&redis.Options{
-			Addr: ":6379",
+			Addr: ":6389",
 		})
 
 		return NewRedisStore[string](rdb)
@@ -21,7 +21,7 @@ func TestRedisStoreTestSuite(t *testing.T) {
 func TestRedisClusterStoreTestSuite(t *testing.T) {
 	testSuite := NewStoreTestSuite(func() StateStore[string] {
 		rdb := redis.NewClusterClient(&redis.ClusterOptions{
-			Addrs: []string{":7001", ":7002", ":7003", ":7004", ":7005", ":7006"},
+			Addrs: []string{":7021", ":7022", ":7023", ":7024", ":7025", ":7026"},
 		})
 
 		return NewRedisStore[string](rdb)

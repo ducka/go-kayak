@@ -18,10 +18,10 @@ help: ## Tell me what everything does!
 
 .PHONY: setup
 setup:
-	docker-compose -f docker-compose.yml up --detach --remove-orphans
-	docker-compose run --rm wait wfi redis:7007 -t 10
+	docker compose -f docker-compose.yml up --detach --remove-orphans
+	#docker compose run --rm wait wfi redis:7007 -t 10
 
 .PHONY: clean
 clean-databases:
-	docker-compose down
+	docker compose down
 	docker image prune -f
