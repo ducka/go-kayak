@@ -4,6 +4,7 @@ import (
 	"errors"
 	"fmt"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/avast/retry-go/v4"
@@ -31,23 +32,23 @@ func Stage[TIn, TOut any](keySelector KeySelectorFunc[TIn], stateMapper StateMap
 		return observe.Operation[TIn, TOut](
 			source,
 			func(ctx observe.Context, upstream streams.Reader[TIn], downstream streams.Writer[TOut]) {
-				//batchStream := streams.NewStream[[]TIn]()
+				batchStream := streams.NewStream[[]TIn]()
 				// TODO: make batch size a configurable setting
-				//batcher := newBatcher[TIn](10, utils.ToPtr(time.Millisecond*200))
+				batcher := newBatcher[TIn](10, utils.ToPtr(time.Millisecond*200))
 				stager := newStager[TIn, TOut](keySelector, stateMapper, stateStore)
 
-				//wg := new(sync.WaitGroup)
-				//wg.Add(1)
-				//
-				//go func() {
-				//	defer batchStream.Close()
-				//	batcher(ctx, upstream, batchStream)
-				//}()
-				//go func() {
-				//	defer wg.Done()
-				stager(ctx, batchStream, downstream)
-				//}()
-				//wg.Wait()
+				wg := new(sync.WaitGroup)
+				wg.Add(1)
+
+				go func() {
+					defer batchStream.Close()
+					batcher(ctx, upstream, batchStream)
+				}()
+				go func() {
+					defer wg.Done()
+					stager(ctx, batchStream, downstream)
+				}()
+				wg.Wait()
 			},
 			opts...,
 		)

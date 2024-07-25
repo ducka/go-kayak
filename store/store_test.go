@@ -118,11 +118,12 @@ func (t *StoreTestSuite) TestOptimisticConcurrency() {
 
 func (t *StoreTestSuite) TestBulkSettingGettingAndDeletingMultipleKeys() {
 	sut := t.createSUT()
+	numberOfItems := 100
 
 	entries := make([]StateEntry[string], 0, 100)
-	keys := make([]string, 0, 100)
+	keys := make([]string, 0, numberOfItems)
 
-	for i := 0; i < 100; i++ {
+	for i := 0; i < numberOfItems; i++ {
 		entry := StateEntry[string]{
 			Key:    uuid.NewString(),
 			State:  utils.ToPtr(uuid.NewString()),
@@ -139,7 +140,7 @@ func (t *StoreTestSuite) TestBulkSettingGettingAndDeletingMultipleKeys() {
 	results, err := sut.Get(t.ctx, keys...)
 
 	assert.NoError(t.T(), err)
-	assert.Len(t.T(), results, 100)
+	assert.Len(t.T(), results, numberOfItems)
 }
 
 //func (t *StoreTestSuite) TestEntryExpiry() {
