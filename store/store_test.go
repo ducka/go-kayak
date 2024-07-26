@@ -27,7 +27,7 @@ func (t *StoreTestSuite) TestGettingAndSetting() {
 	sut := t.createSUT()
 
 	// Test getting a non-existent key
-	result, err := sut.Get(t.ctx, uuid.NewString())
+	result, err := sut.Get(t.ctx, []string{uuid.NewString()})
 
 	assert.Empty(t.T(), result)
 	assert.NoError(t.T(), err)
@@ -40,12 +40,12 @@ func (t *StoreTestSuite) TestGettingAndSetting() {
 
 	var gotEntry StateEntry[string]
 
-	err = sut.Set(t.ctx, newEntry)
+	err = sut.Set(t.ctx, []StateEntry[string]{newEntry})
 
 	assert.Empty(t.T(), err)
 
 	// Test getting the new key
-	g, err := sut.Get(t.ctx, newEntry.Key)
+	g, err := sut.Get(t.ctx, []string{newEntry.Key})
 	assert.NoError(t.T(), err)
 	gotEntry = g[0]
 	assert.Equal(t.T(), newEntry.Key, gotEntry.Key)
@@ -58,12 +58,12 @@ func (t *StoreTestSuite) TestGettingAndSetting() {
 		State:     utils.ToPtr(uuid.NewString()),
 		Timestamp: gotEntry.Timestamp,
 	}
-	err = sut.Set(t.ctx, updatedEntry)
+	err = sut.Set(t.ctx, []StateEntry[string]{updatedEntry})
 
 	assert.Empty(t.T(), err)
 
 	// Test getting the updated key
-	g, _ = sut.Get(t.ctx, updatedEntry.Key)
+	g, _ = sut.Get(t.ctx, []string{updatedEntry.Key})
 	gotEntry = g[0]
 
 	assert.Equal(t.T(), updatedEntry.Key, gotEntry.Key)
@@ -71,15 +71,15 @@ func (t *StoreTestSuite) TestGettingAndSetting() {
 	assert.NotEmpty(t.T(), gotEntry.Timestamp)
 
 	// Test deleting the key
-	err = sut.Set(t.ctx, StateEntry[string]{
+	err = sut.Set(t.ctx, []StateEntry[string]{{
 		Key:       updatedEntry.Key,
 		State:     nil,
 		Timestamp: gotEntry.Timestamp,
-	})
+	}})
 	assert.Empty(t.T(), err)
 
 	// Test getting a non-existent key
-	result, err = sut.Get(t.ctx, updatedEntry.Key)
+	result, err = sut.Get(t.ctx, []string{updatedEntry.Key})
 
 	assert.Empty(t.T(), result)
 	assert.NoError(t.T(), err)
@@ -94,20 +94,20 @@ func (t *StoreTestSuite) TestOptimisticConcurrency() {
 		State: utils.ToPtr(uuid.NewString()),
 	}
 
-	err := sut.Set(t.ctx, newEntry)
+	err := sut.Set(t.ctx, []StateEntry[string]{newEntry})
 	assert.NoError(t.T(), err)
 
 	// Retrieve the set key from the store
-	retrievedEntries, err := sut.Get(t.ctx, newEntry.Key)
+	retrievedEntries, err := sut.Get(t.ctx, []string{newEntry.Key})
 	assert.NotEmpty(t.T(), retrievedEntries)
 	assert.NoError(t.T(), err)
 
 	// Set the retrieved entry back to the store. This should succeed.
-	err = sut.Set(t.ctx, retrievedEntries...)
+	err = sut.Set(t.ctx, retrievedEntries)
 	assert.NoError(t.T(), err)
 
 	// Set the retrieved entry back to the store again. This should fail because the timestamp has increased with the previous set.
-	err = sut.Set(t.ctx, retrievedEntries...)
+	err = sut.Set(t.ctx, retrievedEntries)
 
 	if conflict := err.(*StateStoreConflict); conflict != nil {
 		assert.Contains(t.T(), conflict.GetConflicts(), newEntry.Key)
@@ -125,45 +125,43 @@ func (t *StoreTestSuite) TestBulkSettingGettingAndDeletingMultipleKeys() {
 
 	for i := 0; i < numberOfItems; i++ {
 		entry := StateEntry[string]{
-			Key:    uuid.NewString(),
-			State:  utils.ToPtr(uuid.NewString()),
-			Expiry: utils.ToPtr(time.Minute),
+			Key:   uuid.NewString(),
+			State: utils.ToPtr(uuid.NewString()),
 		}
 		entries = append(entries, entry)
 		keys = append(keys, entry.Key)
 	}
 
-	err := sut.Set(t.ctx, entries...)
+	err := sut.Set(t.ctx, entries, WithExpiry(1*time.Minute))
 
 	assert.NoError(t.T(), err)
 
-	results, err := sut.Get(t.ctx, keys...)
+	results, err := sut.Get(t.ctx, keys)
 
 	assert.NoError(t.T(), err)
 	assert.Len(t.T(), results, numberOfItems)
 }
 
-//func (t *StoreTestSuite) TestEntryExpiry() {
-//	sut := t.createSUT()
-//
-//	newEntry := StateEntry[string]{
-//		Key:    uuid.NewString(),
-//		State:  utils.ToPtr(uuid.NewString()),
-//		Expiry: utils.ToPtr(1 * time.Second),
-//	}
-//
-//	err := sut.Set(t.ctx, newEntry)
-//	assert.NoError(t.T(), err)
-//
-//	// Retrieve the set key from the store
-//	retrievedEntries, err := sut.Get(t.ctx, newEntry.Key)
-//	assert.Len(t.T(), retrievedEntries, 1)
-//	assert.NoError(t.T(), err)
-//	assert.Equal(t.T(), retrievedEntries[0].Key, newEntry.Key)
-//
-//	time.Sleep(2 * time.Second)
-//
-//	retrievedEntries, err = sut.Get(t.ctx, newEntry.Key)
-//	assert.Empty(t.T(), retrievedEntries)
-//	assert.NoError(t.T(), err)
-//}
+func (t *StoreTestSuite) TestEntryExpiry() {
+	sut := t.createSUT()
+
+	newEntry := StateEntry[string]{
+		Key:   uuid.NewString(),
+		State: utils.ToPtr(uuid.NewString()),
+	}
+
+	err := sut.Set(t.ctx, []StateEntry[string]{newEntry}, WithExpiry(1*time.Second))
+	assert.NoError(t.T(), err)
+
+	// Retrieve the set key from the store
+	retrievedEntries, err := sut.Get(t.ctx, []string{newEntry.Key})
+	assert.Len(t.T(), retrievedEntries, 1)
+	assert.NoError(t.T(), err)
+	assert.Equal(t.T(), retrievedEntries[0].Key, newEntry.Key)
+
+	time.Sleep(2 * time.Second)
+
+	retrievedEntries, err = sut.Get(t.ctx, []string{newEntry.Key})
+	assert.Empty(t.T(), retrievedEntries)
+	assert.NoError(t.T(), err)
+}

@@ -92,7 +92,7 @@ func newStager[TIn, TOut any](keySelector KeySelectorFunc[TIn], stateMapper Stat
 			errors.As(
 				retry.Do(
 					func() error {
-						stateEntries, err2 := stateStore.Get(ctx, distinctKeys...)
+						stateEntries, err2 := stateStore.Get(ctx, distinctKeys)
 						stateEntriesMap = utils.ArrayToMap(stateEntries, func(entry store.StateEntry[TOut]) string {
 							return entry.Key
 						})
@@ -124,7 +124,7 @@ func newStager[TIn, TOut any](keySelector KeySelectorFunc[TIn], stateMapper Stat
 						}
 
 						stateEntries = utils.MapToArray(stateEntriesMap)
-						err2 = stateStore.Set(ctx, stateEntries...)
+						err2 = stateStore.Set(ctx, stateEntries)
 
 						return err2
 					},

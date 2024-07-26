@@ -25,7 +25,7 @@ func NewRedisStore[TState any](client redis.UniversalClient) *RedisStore[TState]
 	}
 }
 
-func (r *RedisStore[TState]) Get(ctx context.Context, keys ...string) ([]StateEntry[TState], error) {
+func (r *RedisStore[TState]) Get(ctx context.Context, keys []string) ([]StateEntry[TState], error) {
 	pipe := r.client.Pipeline()
 
 	cmds := make([]*redis.SliceCmd, 0, len(keys))
@@ -111,11 +111,11 @@ if not currentTimestamp or currentTimestamp == expectedTimestamp then
 else
 	return "conflict"
 end
-
 `
 )
 
-func (r *RedisStore[TState]) Set(ctx context.Context, entries ...StateEntry[TState]) error {
+func (r *RedisStore[TState]) Set(ctx context.Context, entries []StateEntry[TState], options ...StoreOption) error {
+	opts := applyOptions(storeOptions{}, options)
 	pipe := r.client.Pipeline()
 	cmds := make([]*redis.Cmd, 0, len(entries))
 
@@ -139,8 +139,8 @@ func (r *RedisStore[TState]) Set(ctx context.Context, entries ...StateEntry[TSta
 		}
 
 		var expiration int64 = -1
-		if entry.Expiry != nil {
-			expiration = int64(entry.Expiry.Seconds())
+		if opts.Expiry != nil {
+			expiration = int64(opts.Expiry.Seconds())
 		}
 
 		nextTimestamp := time.Now().UnixNano()
