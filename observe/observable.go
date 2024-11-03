@@ -52,8 +52,14 @@ const (
 	OnConnect PublishStrategy = "connect"
 )
 
+const (
+	defaultBackpressureStrategy BackpressureStrategy = Block
+	defaultErrorStrategy        ErrorStrategy        = StopOnError
+	defaultPublishStrategy      PublishStrategy      = Immediately
+)
+
 // Producer observes items produced by a callback function
-func Producer[T any](producer ProducerFunc[T], opts ...ObservableOption) *Observable[T] {
+func Producer[T any](producer ProducerFunc[T], opts ...ObservableOption[T]) *Observable[T] {
 	return newObservable[T](
 		func(streamWriter streams.Writer[T], opts observableOptions) {
 			producer(streamWriter)
@@ -64,14 +70,14 @@ func Producer[T any](producer ProducerFunc[T], opts ...ObservableOption) *Observ
 }
 
 // Empty is an observable that emits nothing. This observable completes immediately.
-func Empty[T any](opts ...ObservableOption) *Observable[T] {
+func Empty[T any](opts ...ObservableOption[T]) *Observable[T] {
 	return newObservable[T](func(streamWriter streams.Writer[T], opts observableOptions) {
 		streamWriter.Close()
 	}, nil, opts...)
 }
 
 // Array is an observable that emits items from an array
-func Array[T any](items []T, opts ...ObservableOption) *Observable[T] {
+func Array[T any](items []T, opts ...ObservableOption[T]) *Observable[T] {
 	return newObservable[T](func(streamWriter streams.Writer[T], opts observableOptions) {
 		for _, item := range items {
 			streamWriter.Write(item)
@@ -81,14 +87,14 @@ func Array[T any](items []T, opts ...ObservableOption) *Observable[T] {
 }
 
 // Value is an observable that emits a single item
-func Value[T any](value T, opts ...ObservableOption) *Observable[T] {
+func Value[T any](value T, opts ...ObservableOption[T]) *Observable[T] {
 	return newObservable[T](func(streamWriter streams.Writer[T], opts observableOptions) {
 		streamWriter.Write(value)
 	}, nil, opts...)
 }
 
 // Cron is an observable that emits items on a specified cron schedule
-func Cron(cronPattern string, opts ...ObservableOption) (*Observable[time.Time], StopFunc) {
+func Cron(cronPattern string, opts ...ObservableOption[time.Time]) (*Observable[time.Time], StopFunc) {
 	parser := cron.NewParser(
 		cron.SecondOptional | cron.Minute | cron.Hour | cron.Dom | cron.Month | cron.Dow | cron.Descriptor,
 	)
@@ -122,7 +128,7 @@ func Cron(cronPattern string, opts ...ObservableOption) (*Observable[time.Time],
 }
 
 // Timer is an observable that emits items on a specified interval
-func Timer(interval time.Duration, opts ...ObservableOption) (*Observable[time.Time], StopFunc) {
+func Timer(interval time.Duration, opts ...ObservableOption[time.Time]) (*Observable[time.Time], StopFunc) {
 	ticker := time.NewTicker(interval)
 	done := make(chan interface{})
 	stopper := func() {
@@ -147,7 +153,7 @@ func Timer(interval time.Duration, opts ...ObservableOption) (*Observable[time.T
 }
 
 // Range observes a range of generated integers
-func Range(start, count int, opts ...ObservableOption) *Observable[int] {
+func Range(start, count int, opts ...ObservableOption[int]) *Observable[int] {
 	return newObservable[int](func(streamWriter streams.Writer[int], opts observableOptions) {
 		for i := start; i < start+count; i++ {
 			streamWriter.Write(i)
@@ -156,97 +162,17 @@ func Range(start, count int, opts ...ObservableOption) *Observable[int] {
 }
 
 // Stream observes items that are written to the Writer produced by this function
-func Stream[T any](opts ...ObservableOption) (streams.Writer[T], *Observable[T]) {
+func Stream[T any](opts ...ObservableOption[T]) (streams.Writer[T], *Observable[T]) {
 	return newStreamObservable[T](nil, opts...)
 }
 
 // Sequence observes an array of values
-func Sequence[T any](sequence []T, opts ...ObservableOption) *Observable[T] {
+func Sequence[T any](sequence []T, opts ...ObservableOption[T]) *Observable[T] {
 	return newObservable[T](func(streamWriter streams.Writer[T], opts observableOptions) {
 		for _, item := range sequence {
 			streamWriter.Write(item)
 		}
 	}, nil, opts...)
-}
-
-// Operation observes items produce by an streams processing operation. This observable provides an operation callback that
-// provides the opportunity to manipulate data in the stream before sending it to a downstream observer. This function allows
-// you to change the type of an Observable from one type to another.
-func Operation[TIn any, TOut any](
-	source *Observable[TIn],
-	operation OperationFunc[TIn, TOut],
-	opts ...ObservableOption,
-) *Observable[TOut] {
-	observable := newObservable[TOut](
-		func(downstream streams.Writer[TOut], opts observableOptions) {
-			opWg := &sync.WaitGroup{}
-			poolWg := &sync.WaitGroup{}
-			upstream := source.ToStream()
-			usePool := opts.poolSize > 1
-			ctx := Context{
-				Context: opts.ctx,
-			}
-
-			if !usePool {
-				operation(ctx, upstream, downstream)
-				return
-			}
-
-			// Initialise the pool of operations to currently process the upstream
-			pool := make(chan *streams.Stream[TIn], opts.poolSize)
-			poolStreamsToClose := make([]*streams.Stream[TIn], opts.poolSize)
-			for i := 0; i < opts.poolSize; i++ {
-				poolStream := streams.NewStream[TIn]()
-				pool <- poolStream
-				poolStreamsToClose[i] = poolStream
-
-				opWg.Add(1)
-				go func(poolStream streams.Reader[TIn], downstream streams.Writer[TOut]) {
-					defer opWg.Done()
-					now := time.Now()
-					operation(ctx, poolStream, downstream)
-					source.measurer.Timing(opts.activity, "operation_duration", time.Since(now))
-				}(poolStream, downstream)
-			}
-
-			// Send items to the next available stream in the pool
-			for item := range upstream.Read() {
-				select {
-				case <-opts.ctx.Done():
-					return
-				case nextStream := <-pool:
-					poolWg.Add(1)
-
-					go func(item streams.Notification[TIn], nextStream *streams.Stream[TIn], pool chan *streams.Stream[TIn]) {
-						defer poolWg.Done()
-
-						nextStream.Send(item)
-						// return the stream to the pool
-						pool <- nextStream
-
-					}(item, nextStream, pool)
-				}
-			}
-
-			// Wait until the concurrently running poolStream streams have finished draining
-			poolWg.Wait()
-
-			// Once drained, close the poolStream streams
-			for _, poolStream := range poolStreamsToClose {
-				poolStream.Close()
-			}
-
-			// And close the pool
-			close(pool)
-
-			// Wait until the concurrently executing operations have finished writing to the downstream
-			opWg.Wait()
-		},
-		mapToParentObservable(source),
-		opts...,
-	)
-
-	return observable
 }
 
 /* TODO: Potential changes to Observable
@@ -259,7 +185,7 @@ more efficient direct from stream observable should probably be some sort of spe
 a stream writer.
 */
 
-func newStreamObservable[T any](parents []upstreamObservable, opts ...ObservableOption) (streams.Writer[T], *Observable[T]) {
+func newStreamObservable[T any](parents []upstreamObservable, opts ...ObservableOption[T]) (streams.Writer[T], *Observable[T]) {
 	source := streams.NewStream[T]()
 
 	return source,
@@ -274,22 +200,19 @@ func newStreamObservable[T any](parents []upstreamObservable, opts ...Observable
 		)
 }
 
-func newObservable[T any](producer func(streamWriter streams.Writer[T], options observableOptions), parents []upstreamObservable, options ...ObservableOption) *Observable[T] {
-	opts := newOptions()
+func newObservable[T any](producer func(streamWriter streams.Writer[T], options observableOptions), parents []upstreamObservable, options ...ObservableOption[T]) *Observable[T] {
+	opts := NewObservableOptionsBuilder[T]()
 
 	// Propagate observableOptions down the observable chain
 	if len(parents) > 0 {
-		applyOptions(&opts, parents)
+		propagateOptions(opts, parents)
 	}
 
-	// Apply observableOptions to the current observable
-	for _, opt := range options {
-		opt(&opts)
-	}
+	opts.apply(options...)
 
 	obs := &Observable[T]{
 		mu:         new(sync.Mutex),
-		opts:       opts,
+		opts:       opts.observableOptions,
 		producer:   producer,
 		downstream: streams.NewStream[T](),
 		parents:    parents,
@@ -305,9 +228,15 @@ func newObservable[T any](producer func(streamWriter streams.Writer[T], options 
 	return obs
 }
 
+type upstreamOptions struct {
+	ctx             context.Context
+	errorStrategy   ErrorStrategy
+	publishStrategy PublishStrategy
+}
+
 type upstreamObservable interface {
 	Connect()
-	cloneOptions() observableOptions
+	cloneOptions() upstreamOptions
 }
 
 type Observable[T any] struct {
@@ -479,30 +408,24 @@ func (o *Observable[T]) setErrorStrategy(strategy ErrorStrategy) {
 	o.opts.errorStrategy = strategy
 }
 
-func (o *Observable[T]) cloneOptions() observableOptions {
-	return observableOptions{
+func (o *Observable[T]) cloneOptions() upstreamOptions {
+	return upstreamOptions{
 		ctx:             o.opts.ctx,
 		errorStrategy:   o.opts.errorStrategy,
 		publishStrategy: o.opts.publishStrategy,
 	}
 }
 
-func applyOptions(opts *observableOptions, parents []upstreamObservable) {
+func propagateOptions[T any](opts *ObservableOptionsBuilder[T], parents []upstreamObservable) {
 	ctxs := make([]context.Context, 0, len(parents))
-	defaults := newOptions()
+
 	// Certain settings need to be propagated from parent observable observableOptions to their child
 	// observable observableOptions
 	for _, p := range parents {
 		o := p.cloneOptions()
 		ctxs = append(ctxs, o.ctx)
-
-		// Only set the following observableOptions if they deviate away from the defaults
-		if o.errorStrategy != defaults.errorStrategy {
-			opts.errorStrategy = o.errorStrategy
-		}
-		if o.publishStrategy == defaults.publishStrategy {
-			opts.publishStrategy = o.publishStrategy
-		}
+		opts.WithErrorStrategy(o.errorStrategy)
+		opts.WithPublishStrategy(o.publishStrategy)
 	}
 
 	opts.ctx = utils.CombinedContexts(ctxs...)

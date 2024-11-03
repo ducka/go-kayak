@@ -16,7 +16,12 @@ func TestObservable(t *testing.T) {
 	t.Run("When observing a sequence of {1, 2, 3}", func(t *testing.T) {
 		sequence := []any{1, 2, 3}
 
-		sut := Producer[int](produceSequence(sequence...), WithErrorStrategy(StopOnError))
+		sut := Producer[int](
+			produceSequence(sequence...),
+			func(options *ObservableOptionsBuilder[int]) {
+				options.WithErrorStrategy(StopOnError)
+			},
+		)
 
 		t.Run("Then the subscriber functions should be invoked as OnNext(1), OnNext(2), OnNext(3), OnComplete(finished)", func(t *testing.T) {
 			subscriberMock := makeSubscriber(StopOnError, sequence...)
@@ -37,7 +42,12 @@ func TestObservable(t *testing.T) {
 		err := errors.New("error")
 		sequence := []any{1, err, 3}
 
-		sut := Producer[int](produceSequence(sequence...), WithErrorStrategy(StopOnError))
+		sut := Producer[int](
+			produceSequence(sequence...),
+			func(options *ObservableOptionsBuilder[int]) {
+				options.WithErrorStrategy(StopOnError)
+			},
+		)
 
 		t.Run("Then the subscriber functions should be invoked as OnNext(1), OnError, OnComplete(error)", func(t *testing.T) {
 			subscriberMock := makeSubscriber(StopOnError, sequence...)
@@ -57,11 +67,16 @@ func TestObservable(t *testing.T) {
 	t.Run("When observing a sequence that emits an error midway", func(t *testing.T) {
 		err := errors.New("error")
 
-		sut := Producer[int](func(stream streams.Writer[int]) {
-			stream.Write(1)
-			stream.Error(err)
-			stream.Write(3)
-		}, WithErrorStrategy(ContinueOnError))
+		sut := Producer[int](
+			func(stream streams.Writer[int]) {
+				stream.Write(1)
+				stream.Error(err)
+				stream.Write(3)
+			},
+			func(options *ObservableOptionsBuilder[int]) {
+				options.WithErrorStrategy(ContinueOnError)
+			},
+		)
 
 		t.Run("And an operator processes the sequence with a ContinueOnError strategy", func(t *testing.T) {
 			op := Operation[int, int](sut, func(ctx Context, s streams.Reader[int], s2 streams.Writer[int]) {
@@ -100,7 +115,9 @@ func TestObservable(t *testing.T) {
 					Writer.Write(i)
 				}
 			},
-			WithContext(ctx),
+			func(options *ObservableOptionsBuilder[int]) {
+				options.WithContext(ctx)
+			},
 		)
 
 		results := sut.ToResult()
@@ -118,7 +135,12 @@ func TestObservable(t *testing.T) {
 		assertWithinTime(t, 200*time.Millisecond, func() {
 			ctx, cancel := context.WithCancel(context.Background())
 			ob1, _ := Timer(100 * time.Millisecond)
-			ob2, _ := Timer(100*time.Millisecond, WithContext(ctx))
+			ob2, _ := Timer(
+				100*time.Millisecond,
+				func(options *ObservableOptionsBuilder[time.Time]) {
+					options.WithContext(ctx)
+				},
+			)
 
 			merged := Merge(ob1, ob2)
 
@@ -139,7 +161,12 @@ func TestObservable(t *testing.T) {
 
 	t.Run("When an observable uses a StopOnError", func(t *testing.T) {
 		expected := []any{1, errors.New("error"), 2}
-		sut := Producer[int](produceSequence(expected...), WithErrorStrategy(StopOnError))
+		sut := Producer[int](
+			produceSequence(expected...),
+			func(options *ObservableOptionsBuilder[int]) {
+				options.WithErrorStrategy(StopOnError)
+			},
+		)
 
 		t.Run("Then the emitted expected should terminate when an error is encountered", func(t *testing.T) {
 			assertSequence(t, expected[:2], sut.ToResult())
@@ -148,7 +175,12 @@ func TestObservable(t *testing.T) {
 
 	t.Run("When an observable uses a ContinueOnError", func(t *testing.T) {
 		expected := []any{1, errors.New("error"), 2}
-		sut := Producer[int](produceSequence(expected...), WithErrorStrategy(ContinueOnError))
+		sut := Producer[int](
+			produceSequence(expected...),
+			func(options *ObservableOptionsBuilder[int]) {
+				options.WithErrorStrategy(ContinueOnError)
+			},
+		)
 
 		t.Run("Then the emitted sequence should complete regardless of encountered errors", func(t *testing.T) {
 			assertSequence(t, expected, sut.ToResult())
@@ -160,12 +192,17 @@ func TestObservable(t *testing.T) {
 		wg := &sync.WaitGroup{}
 		wg.Add(1)
 
-		sut := Producer[int](func(Writer streams.Writer[int]) {
-			for i := 0; i < sequenceLength; i++ {
-				Writer.Write(i)
-			}
-			wg.Done()
-		}, WithBackpressureStrategy(Drop))
+		sut := Producer[int](
+			func(Writer streams.Writer[int]) {
+				for i := 0; i < sequenceLength; i++ {
+					Writer.Write(i)
+				}
+				wg.Done()
+			},
+			func(options *ObservableOptionsBuilder[int]) {
+				options.WithBackpressureStrategy(Drop)
+			},
+		)
 
 		t.Run("and backpressure is experienced in the pipeline", func(t *testing.T) {
 			items := make([]int, 0, sequenceLength)
@@ -182,11 +219,16 @@ func TestObservable(t *testing.T) {
 
 	t.Run("When an observable uses a Block backpressure strategy", func(t *testing.T) {
 		sequenceLength := 100
-		sut := Producer[int](func(Writer streams.Writer[int]) {
-			for i := 0; i < sequenceLength; i++ {
-				Writer.Write(i)
-			}
-		}, WithBackpressureStrategy(Block))
+		sut := Producer[int](
+			func(Writer streams.Writer[int]) {
+				for i := 0; i < sequenceLength; i++ {
+					Writer.Write(i)
+				}
+			},
+			func(options *ObservableOptionsBuilder[int]) {
+				options.WithBackpressureStrategy(Block)
+			},
+		)
 
 		t.Run("and backpressure is experienced in the pipeline", func(t *testing.T) {
 			items := make([]int, 0, sequenceLength)
@@ -210,11 +252,16 @@ func TestObservable(t *testing.T) {
 
 	t.Run("When an observable uses a Block backpressure strategy", func(t *testing.T) {
 		sequenceLength := 100
-		sut := Producer[int](func(Writer streams.Writer[int]) {
-			for i := 0; i < sequenceLength; i++ {
-				Writer.Write(i)
-			}
-		}, WithBackpressureStrategy(Block))
+		sut := Producer[int](
+			func(Writer streams.Writer[int]) {
+				for i := 0; i < sequenceLength; i++ {
+					Writer.Write(i)
+				}
+			},
+			func(options *ObservableOptionsBuilder[int]) {
+				options.WithBackpressureStrategy(Block)
+			},
+		)
 
 		t.Run("and backpressure is experienced in the pipeline", func(t *testing.T) {
 			items := make([]int, 0, sequenceLength)
@@ -238,45 +285,46 @@ func TestObservable(t *testing.T) {
 	})
 
 	t.Run("When an observable operator uses a pool for concurrency and a workload is generated to fully utilise the pool", func(t *testing.T) {
-		now := time.Now()
-		poolSize := 5
-		wg := &sync.WaitGroup{}
-		wg.Add(poolSize)
-		mu := &sync.Mutex{}
+		t.Fail()
+		//now := time.Now()
+		//poolSize := 5
+		//wg := &sync.WaitGroup{}
+		//wg.Add(poolSize)
+		//mu := &sync.Mutex{}
+		//
+		//ob := Sequence(GenerateIntSequence(0, 15))
+		//
+		//activeProducers := 0
+		//
+		//op := Operation[int, int](
+		//	ob,
+		//	func(ctx Context, s streams.Reader[int], s2 streams.Writer[int]) {
+		//		// The number of times this operator function executes should equal the pool size. Each operator function has its own
+		//		// stream which is written to in a roundrobin style concurrently. If this active producers count doesn't match the pool
+		//		// size, this should indicate a bug in the pool implementation.
+		//		mu.Lock()
+		//		activeProducers++
+		//		mu.Unlock()
+		//
+		//		for item := range s.Read() {
+		//			time.Sleep(100 * time.Millisecond)
+		//			s2.Send(item)
+		//		}
+		//	},
+		//	WithPool(poolSize),
+		//)
 
-		ob := Sequence(GenerateIntSequence(0, 15))
-
-		activeProducers := 0
-
-		op := Operation[int, int](
-			ob,
-			func(ctx Context, s streams.Reader[int], s2 streams.Writer[int]) {
-				// The number of times this operator function executes should equal the pool size. Each operator function has its own
-				// stream which is written to in a roundrobin style concurrently. If this active producers count doesn't match the pool
-				// size, this should indicate a bug in the pool implementation.
-				mu.Lock()
-				activeProducers++
-				mu.Unlock()
-
-				for item := range s.Read() {
-					time.Sleep(100 * time.Millisecond)
-					s2.Send(item)
-				}
-			},
-			WithPool(poolSize),
-		)
-
-		results := op.ToResult()
-
-		t.Run("Then the pool should be fully utilized", func(t *testing.T) {
-			assert.Equal(t, poolSize, activeProducers)
-		})
-
-		t.Run("Then the pipeline should execute in the expected time", func(t *testing.T) {
-			shouldTake := 300 * time.Millisecond
-			assert.WithinDuration(t, now.Add(shouldTake), time.Now(), 20*time.Millisecond)
-			assert.Len(t, results, 15)
-		})
+		//results := op.ToResult()
+		//
+		//t.Run("Then the pool should be fully utilized", func(t *testing.T) {
+		//	assert.Equal(t, poolSize, activeProducers)
+		//})
+		//
+		//t.Run("Then the pipeline should execute in the expected time", func(t *testing.T) {
+		//	shouldTake := 300 * time.Millisecond
+		//	assert.WithinDuration(t, now.Add(shouldTake), time.Now(), 20*time.Millisecond)
+		//	assert.Len(t, results, 15)
+		//})
 	})
 
 	t.Run("When configuring an observable with a buffer", func(t *testing.T) {
@@ -296,7 +344,10 @@ func TestObservable(t *testing.T) {
 				}
 
 			},
-			WithBuffer(bufferSize),
+
+			func(options *ObservableOptionsBuilder[int]) {
+				options.WithBuffer(bufferSize)
+			},
 		)
 
 		// Execute observe, but don't read the sequence. This will trigger the buffer
@@ -375,7 +426,12 @@ func TestObservable(t *testing.T) {
 
 	t.Run("When observing a sequence of integers with a publish strategy of Immediately", func(t *testing.T) {
 		expected := GenerateIntSequence(0, 10)
-		ob := Sequence(expected, WithPublishStrategy(Immediately))
+		ob := Sequence(
+			expected,
+			func(options *ObservableOptionsBuilder[int]) {
+				options.WithPublishStrategy(Immediately)
+			},
+		)
 
 		t.Run("Then the observer should emit the sequence immediately when subscribed to", func(t *testing.T) {
 			wg := &sync.WaitGroup{}
@@ -398,7 +454,12 @@ func TestObservable(t *testing.T) {
 
 	t.Run("When observing a sequence of integers with a publish strategy of OnConnect", func(t *testing.T) {
 		expected := GenerateIntSequence(0, 10)
-		ob := Sequence(expected, WithPublishStrategy(OnConnect))
+		ob := Sequence(
+			expected,
+			func(options *ObservableOptionsBuilder[int]) {
+				options.WithPublishStrategy(OnConnect)
+			},
+		)
 
 		t.Run("Then the observer should not emit the sequence immediately when subscribed to", func(t *testing.T) {
 			wg := &sync.WaitGroup{}

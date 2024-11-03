@@ -11,7 +11,7 @@ type (
 	SorterFunc[T any] func(left, right T) bool
 )
 
-func Sort[T any](comparer SorterFunc[T], opts ...observe.ObservableOption) observe.OperatorFunc[T, T] {
+func Sort[T any](comparer SorterFunc[T], opts ...observe.OperationOption[T, T]) observe.OperatorFunc[T, T] {
 	opts = defaultActivityName("Sort", opts)
 	return func(source *observe.Observable[T]) *observe.Observable[T] {
 		return observe.Operation[T, T](

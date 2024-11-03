@@ -8,7 +8,7 @@ import (
 )
 
 // Print logs the emitted item out via console
-func Print[T any](label string, opts ...observe.ObservableOption) observe.OperatorFunc[T, T] {
+func Print[T any](label string, opts ...observe.OperationOption[T, T]) observe.OperatorFunc[T, T] {
 	opts = defaultActivityName("Print", opts)
 	return func(source *observe.Observable[T]) *observe.Observable[T] {
 		return observe.Operation[T, T](

@@ -4,6 +4,13 @@ import (
 	"github.com/ducka/go-kayak/observe"
 )
 
-func defaultActivityName(name string, opts []observe.ObservableOption) []observe.ObservableOption {
-	return append([]observe.ObservableOption{observe.WithActivityName(name)}, opts...)
+func defaultActivityName[TIn, TOut any](name string, opts []observe.OperationOption[TIn, TOut]) []observe.OperationOption[TIn, TOut] {
+	return append(
+		[]observe.OperationOption[TIn, TOut]{
+			func(settings *observe.OperationOptionsBuilder[TIn, TOut]) {
+				settings.WithActivityName(name)
+			},
+		},
+		opts...,
+	)
 }

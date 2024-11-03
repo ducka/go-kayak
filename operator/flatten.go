@@ -6,7 +6,7 @@ import (
 )
 
 // Flatten flattens a stream of slices or batches into a flat stream of Items
-func Flatten[T any](opts ...observe.ObservableOption) observe.OperatorFunc[[]T, T] {
+func Flatten[T any](opts ...observe.OperationOption[[]T, T]) observe.OperatorFunc[[]T, T] {
 	opts = defaultActivityName("Flatten", opts)
 	return func(source *observe.Observable[[]T]) *observe.Observable[T] {
 		return observe.Operation[[]T, T](
