@@ -205,7 +205,7 @@ func Operation[TIn any, TOut any](
 					defer opWg.Done()
 					now := time.Now()
 					operation(ctx, poolStream, downstream)
-					opts.metrics.Timing(opts.activity, "operation_duration", time.Since(now))
+					source.measurer.Timing(opts.activity, "operation_duration", time.Since(now))
 				}(poolStream, downstream)
 			}
 
@@ -294,8 +294,8 @@ func newObservable[T any](producer func(streamWriter streams.Writer[T], options 
 		downstream: streams.NewStream[T](),
 		parents:    parents,
 		subs:       newSubscribers[T](),
-		metrics:    opts.metrics,
-		logger:     opts.logger,
+		measurer:   measurer,
+		logger:     logger,
 	}
 
 	if opts.publishStrategy == Immediately {
@@ -322,7 +322,7 @@ type Observable[T any] struct {
 	// connected is a flag that indicates whether the observable has begun observing items from the upstream
 	connected bool
 	subs      *subscribers[T]
-	metrics   MetricsMonitor
+	measurer  Measurer
 	logger    Logger
 }
 
@@ -352,9 +352,9 @@ func (o *Observable[T]) Connect() {
 			case <-o.opts.ctx.Done():
 				now := time.Now()
 				o.downstream.Error(o.opts.ctx.Err())
-				o.metrics.Timing(o.opts.activity, "item_backpressure", time.Since(now))
-				o.metrics.Incr(o.opts.activity, "item_emitted", 1)
-				o.metrics.Incr(o.opts.activity, "error_emitted", 1)
+				o.measurer.Timing(o.opts.activity, "item_backpressure", time.Since(now))
+				o.measurer.Incr(o.opts.activity, "item_emitted", 1)
+				o.measurer.Incr(o.opts.activity, "error_emitted", 1)
 				return
 			case item, ok := <-upstream.Read():
 				if !ok {
@@ -364,9 +364,9 @@ func (o *Observable[T]) Connect() {
 				if item.Error() != nil && o.opts.errorStrategy == StopOnError {
 					now := time.Now()
 					o.downstream.Send(item)
-					o.metrics.Timing(o.opts.activity, "item_backpressure", time.Since(now))
-					o.metrics.Incr(o.opts.activity, "item_emitted", 1)
-					o.metrics.Incr(o.opts.activity, "error_emitted", 1)
+					o.measurer.Timing(o.opts.activity, "item_backpressure", time.Since(now))
+					o.measurer.Incr(o.opts.activity, "item_emitted", 1)
+					o.measurer.Incr(o.opts.activity, "error_emitted", 1)
 					return
 				}
 
@@ -374,21 +374,21 @@ func (o *Observable[T]) Connect() {
 					now := time.Now()
 					ok := o.downstream.TrySend(item)
 					if ok {
-						// Only record backpressure metrics if the item was successfully sent, otherwise you'll
+						// Only record backpressure measurer if the item was successfully sent, otherwise you'll
 						// be measuring backpressure for dropped items which would bring backpressure down to zero,
 						// making the metric useless
-						o.metrics.Timing(o.opts.activity, "item_backpressure", time.Since(now))
-						o.metrics.Incr(o.opts.activity, "item_emitted", 1)
-						o.metrics.Incr(o.opts.activity, "value_emitted", 1)
+						o.measurer.Timing(o.opts.activity, "item_backpressure", time.Since(now))
+						o.measurer.Incr(o.opts.activity, "item_emitted", 1)
+						o.measurer.Incr(o.opts.activity, "value_emitted", 1)
 					} else {
-						o.metrics.Incr(o.opts.activity, "value_dropped", 1)
+						o.measurer.Incr(o.opts.activity, "value_dropped", 1)
 					}
 				} else {
 					now := time.Now()
 					o.downstream.Send(item)
-					o.metrics.Timing(o.opts.activity, "item_backpressure", time.Since(now))
-					o.metrics.Incr(o.opts.activity, "item_emitted", 1)
-					o.metrics.Incr(o.opts.activity, "value_emitted", 1)
+					o.measurer.Timing(o.opts.activity, "item_backpressure", time.Since(now))
+					o.measurer.Incr(o.opts.activity, "item_emitted", 1)
+					o.measurer.Incr(o.opts.activity, "value_emitted", 1)
 				}
 			}
 		}
@@ -484,10 +484,6 @@ func (o *Observable[T]) cloneOptions() observableOptions {
 		ctx:             o.opts.ctx,
 		errorStrategy:   o.opts.errorStrategy,
 		publishStrategy: o.opts.publishStrategy,
-		// TODO: This is a temporary requirement until observables support global middlewares
-		metrics: o.opts.metrics,
-		// TODO: This is a temporary requirement until observables support global middlewares
-		logger: o.opts.logger,
 	}
 }
 

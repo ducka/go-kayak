@@ -13,8 +13,6 @@ type observableOptions struct {
 	poolSize             int
 	buffer               uint64
 	publishStrategy      PublishStrategy
-	logger               Logger
-	metrics              MetricsMonitor
 }
 
 func newOptions() observableOptions {
@@ -24,8 +22,6 @@ func newOptions() observableOptions {
 		errorStrategy:        StopOnError,
 		buffer:               0,
 		publishStrategy:      Immediately,
-		logger:               &NilLogger{},
-		metrics:              &NilMetricsMonitor{},
 	}
 }
 
@@ -82,18 +78,6 @@ func WithPool(poolSize int) ObservableOption {
 		}
 
 		options.poolSize = poolSize
-	}
-}
-
-func WithLogger(logger Logger) ObservableOption {
-	return func(options *observableOptions) {
-		options.logger = logger
-	}
-}
-
-func WithMetrics(metricsMonitor MetricsMonitor) ObservableOption {
-	return func(options *observableOptions) {
-		options.metrics = metricsMonitor
 	}
 }
 

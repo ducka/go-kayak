@@ -4,15 +4,15 @@ import (
 	"time"
 )
 
-type MetricsMonitor interface {
+type Measurer interface {
 	Incr(activity string, name string, value float64, tags ...string)
 	Timing(activity string, name string, value time.Duration, tags ...string)
 }
 
-type NilMetricsMonitor struct{}
+type NilMeasurer struct{}
 
-func (*NilMetricsMonitor) Incr(activity string, name string, value float64, tags ...string)         {}
-func (*NilMetricsMonitor) Timing(activity string, name string, value time.Duration, tags ...string) {}
+func (*NilMeasurer) Incr(activity string, name string, value float64, tags ...string)         {}
+func (*NilMeasurer) Timing(activity string, name string, value time.Duration, tags ...string) {}
 
 // TODO: Pare back this interface as required.
 type Logger interface {
@@ -32,3 +32,24 @@ func (*NilLogger) Fatal(string, string) {}
 func (*NilLogger) Info(string, string)  {}
 func (*NilLogger) Panic(string, string) {}
 func (*NilLogger) Warn(string, string)  {}
+
+var (
+	measurer Measurer
+	logger   Logger
+)
+
+func SetMetricsProvider(provider Measurer) {
+	if provider == nil {
+		panic("Metrics provider must be specified")
+	}
+
+	measurer = provider
+}
+
+func SetLoggingProvider(provider Logger) {
+	if provider == nil {
+		panic("Logging provider must be specified")
+	}
+
+	logger = provider
+}
