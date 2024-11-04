@@ -85,7 +85,7 @@ func TestDemo(t *testing.T) {
 	wg.Add(1)
 
 	ob := observe.Pipe7(
-		observe.Range(0, 100, func(builder *observe.ObservableOptions[int]) {
+		observe.Range(0, 100, func(builder *observe.ObservableSettings[int]) {
 			builder.WithActivityName("Observing kafka")
 		}),
 		operator.Filter[int](func(item int) bool {

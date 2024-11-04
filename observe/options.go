@@ -4,68 +4,76 @@ import (
 	"context"
 )
 
-type ObservableOption func(options *ObservableOptions)
+type ObservableOption func(settings *ObservableSettings)
 
-type ObservableOptions struct {
-	ctx                  context.Context
-	activity             string
-	backpressureStrategy BackpressureStrategy
-	errorStrategy        ErrorStrategy
-	buffer               uint64
-	publishStrategy      PublishStrategy
+type ObservableSettings struct {
+	ctx                  *context.Context
+	activity             *string
+	backpressureStrategy *BackpressureStrategy
+	errorStrategy        *ErrorStrategy
+	buffer               *uint64
+	publishStrategy      *PublishStrategy
 }
 
-func NewObservableOptionsBuilder() *ObservableOptions {
-	return &ObservableOptions{
-		ctx:                  context.Background(),
-		backpressureStrategy: defaultBackpressureStrategy,
-		errorStrategy:        defaultErrorStrategy,
-		publishStrategy:      defaultPublishStrategy,
-	}
+func NewObservableSettings() *ObservableSettings {
+	return &ObservableSettings{}
 }
 
-func (b *ObservableOptions) apply(options ...ObservableOption) {
+func (b *ObservableSettings) apply(options ...ObservableOption) {
 	for _, opt := range options {
 		opt(b)
 	}
 }
 
-func (b *ObservableOptions) copyTo(o *ObservableOptions) {
-	o.ctx = b.ctx
-	o.activity = b.activity
-	o.backpressureStrategy = b.backpressureStrategy
-	o.errorStrategy = b.errorStrategy
-	o.buffer = b.buffer
-	o.publishStrategy = b.publishStrategy
+// copyTo copies settings to the supplied ObservableSettings object
+func (b *ObservableSettings) copyTo(dest *ObservableSettings) {
+	if b.ctx != nil {
+		dest.ctx = b.ctx
+	}
+	if b.activity != nil {
+		dest.activity = b.activity
+	}
+	if b.backpressureStrategy != nil {
+		dest.backpressureStrategy = b.backpressureStrategy
+	}
+	if b.errorStrategy != nil {
+		dest.errorStrategy = b.errorStrategy
+	}
+	if b.buffer != nil {
+		dest.buffer = b.buffer
+	}
+	if b.publishStrategy != nil {
+		dest.publishStrategy = b.publishStrategy
+	}
 }
 
-func (b *ObservableOptions) WithContext(ctx context.Context) *ObservableOptions {
-	b.ctx = ctx
+func (b *ObservableSettings) WithContext(ctx context.Context) *ObservableSettings {
+	b.ctx = &ctx
 	return b
 }
 
-func (b *ObservableOptions) WithPublishStrategy(publishStrategy PublishStrategy) *ObservableOptions {
-	b.publishStrategy = publishStrategy
+func (b *ObservableSettings) WithPublishStrategy(publishStrategy PublishStrategy) *ObservableSettings {
+	b.publishStrategy = &publishStrategy
 	return b
 }
 
-func (b *ObservableOptions) WithErrorStrategy(errorStrategy ErrorStrategy) *ObservableOptions {
-	b.errorStrategy = errorStrategy
+func (b *ObservableSettings) WithErrorStrategy(errorStrategy ErrorStrategy) *ObservableSettings {
+	b.errorStrategy = &errorStrategy
 	return b
 }
 
-func (b *ObservableOptions) WithBackpressureStrategy(backpressureStrategy BackpressureStrategy) *ObservableOptions {
-	b.backpressureStrategy = backpressureStrategy
+func (b *ObservableSettings) WithBackpressureStrategy(backpressureStrategy BackpressureStrategy) *ObservableSettings {
+	b.backpressureStrategy = &backpressureStrategy
 	return b
 }
 
-func (b *ObservableOptions) WithActivityName(activity string) *ObservableOptions {
-	b.activity = activity
+func (b *ObservableSettings) WithActivityName(activity string) *ObservableSettings {
+	b.activity = &activity
 	return b
 }
 
-func (b *ObservableOptions) WithBuffer(bufferSize uint64) *ObservableOptions {
-	b.buffer = bufferSize
+func (b *ObservableSettings) WithBuffer(bufferSize uint64) *ObservableSettings {
+	b.buffer = &bufferSize
 	return b
 }
 

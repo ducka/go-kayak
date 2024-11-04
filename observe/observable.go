@@ -6,6 +6,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/ducka/go-kayak/instrumentation"
 	"github.com/ducka/go-kayak/streams"
 	"github.com/ducka/go-kayak/utils"
 	"github.com/robfig/cron/v3"
@@ -15,8 +16,8 @@ type (
 	OnErrorFunc                      func(error)
 	OnCompleteFunc                   func(reason CompleteReason, err error)
 	OnNextFunc[T any]                func(v T)
-	ProducerFunc[T any]              func(streamWriter streams.Writer[T])
-	OperationFunc[TIn any, TOut any] func(Context, streams.Reader[TIn], streams.Writer[TOut])
+	ProducerFunc[T any]              func(ctx Context, streamWriter streams.Writer[T])
+	OperationFunc[TIn any, TOut any] func(ctx Context, streamReader streams.Reader[TIn], streamWriter streams.Writer[TOut])
 	StopFunc                         func()
 
 	ErrorStrategy        string
@@ -24,11 +25,6 @@ type (
 	CompleteReason       string
 	PublishStrategy      string
 )
-
-type Context struct {
-	context.Context
-	Activity string
-}
 
 const (
 	// ContinueOnError instructs the observable to continue observing items when an error is encountered
@@ -52,17 +48,11 @@ const (
 	OnConnect PublishStrategy = "connect"
 )
 
-const (
-	defaultBackpressureStrategy BackpressureStrategy = Block
-	defaultErrorStrategy        ErrorStrategy        = StopOnError
-	defaultPublishStrategy      PublishStrategy      = Immediately
-)
-
 // Producer observes items produced by a callback function
 func Producer[T any](producer ProducerFunc[T], opts ...ObservableOption) *Observable[T] {
 	return newObservable[T](
-		func(streamWriter streams.Writer[T], opts ObservableOptions) {
-			producer(streamWriter)
+		func(ctx Context, streamWriter streams.Writer[T]) {
+			producer(ctx, streamWriter)
 		},
 		nil,
 		opts...,
@@ -71,14 +61,14 @@ func Producer[T any](producer ProducerFunc[T], opts ...ObservableOption) *Observ
 
 // Empty is an observable that emits nothing. This observable completes immediately.
 func Empty[T any](opts ...ObservableOption) *Observable[T] {
-	return newObservable[T](func(streamWriter streams.Writer[T], opts ObservableOptions) {
+	return newObservable[T](func(ctx Context, streamWriter streams.Writer[T]) {
 		streamWriter.Close()
 	}, nil, opts...)
 }
 
 // Array is an observable that emits items from an array
 func Array[T any](items []T, opts ...ObservableOption) *Observable[T] {
-	return newObservable[T](func(streamWriter streams.Writer[T], opts ObservableOptions) {
+	return newObservable[T](func(ctx Context, streamWriter streams.Writer[T]) {
 		for _, item := range items {
 			streamWriter.Write(item)
 		}
@@ -88,7 +78,7 @@ func Array[T any](items []T, opts ...ObservableOption) *Observable[T] {
 
 // Value is an observable that emits a single item
 func Value[T any](value T, opts ...ObservableOption) *Observable[T] {
-	return newObservable[T](func(streamWriter streams.Writer[T], opts ObservableOptions) {
+	return newObservable[T](func(ctx Context, streamWriter streams.Writer[T]) {
 		streamWriter.Write(value)
 	}, nil, opts...)
 }
@@ -110,8 +100,7 @@ func Cron(cronPattern string, opts ...ObservableOption) (*Observable[time.Time],
 	}
 
 	return newObservable[time.Time](
-		func(streamWriter streams.Writer[time.Time], opts ObservableOptions) {
-
+		func(ctx Context, streamWriter streams.Writer[time.Time]) {
 			for {
 				next := schedule.Next(time.Now())
 				select {
@@ -136,7 +125,7 @@ func Timer(interval time.Duration, opts ...ObservableOption) (*Observable[time.T
 		ticker.Stop()
 	}
 	return newObservable[time.Time](
-		func(streamWriter streams.Writer[time.Time], opts ObservableOptions) {
+		func(ctx Context, streamWriter streams.Writer[time.Time]) {
 			defer ticker.Stop()
 			for {
 				select {
@@ -154,7 +143,7 @@ func Timer(interval time.Duration, opts ...ObservableOption) (*Observable[time.T
 
 // Range observes a range of generated integers
 func Range(start, count int, opts ...ObservableOption) *Observable[int] {
-	return newObservable[int](func(streamWriter streams.Writer[int], opts ObservableOptions) {
+	return newObservable[int](func(ctx Context, streamWriter streams.Writer[int]) {
 		for i := start; i < start+count; i++ {
 			streamWriter.Write(i)
 		}
@@ -168,7 +157,7 @@ func Stream[T any](opts ...ObservableOption) (streams.Writer[T], *Observable[T])
 
 // Sequence observes an array of values
 func Sequence[T any](sequence []T, opts ...ObservableOption) *Observable[T] {
-	return newObservable[T](func(streamWriter streams.Writer[T], opts ObservableOptions) {
+	return newObservable[T](func(ctx Context, streamWriter streams.Writer[T]) {
 		for _, item := range sequence {
 			streamWriter.Write(item)
 		}
@@ -190,7 +179,7 @@ func newStreamObservable[T any](parents []upstreamObservable, opts ...Observable
 
 	return source,
 		newObservable[T](
-			func(streamWriter streams.Writer[T], options ObservableOptions) {
+			func(ctx Context, streamWriter streams.Writer[T]) {
 				for item := range source.Read() {
 					streamWriter.Send(item)
 				}
@@ -200,50 +189,63 @@ func newStreamObservable[T any](parents []upstreamObservable, opts ...Observable
 		)
 }
 
-func newObservable[T any](producer func(streamWriter streams.Writer[T], options ObservableOptions), parents []upstreamObservable, options ...ObservableOption) *Observable[T] {
-	opts := NewObservableOptionsBuilder()
+func newObservable[T any](producer func(ctx Context, streamWriter streams.Writer[T]), parents []upstreamObservable, options ...ObservableOption) *Observable[T] {
+	settings := NewObservableSettings()
 
 	// Propagate observableOptions down the observable chain
 	if len(parents) > 0 {
-		propagateOptions(opts, parents)
+		propagateSettings(settings, parents)
 	}
 
-	opts.apply(options...)
+	settings.apply(options...)
 
 	obs := &Observable[T]{
-		mu:         new(sync.Mutex),
-		opts:       *opts,
-		producer:   producer,
-		downstream: streams.NewStream[T](),
-		parents:    parents,
-		subs:       newSubscribers[T](),
-		measurer:   measurer,
-		logger:     logger,
+		mu:       new(sync.Mutex),
+		settings: settings,
+		ctx: Context{
+			Context:  utils.ValueOrFallback(settings.ctx, context.Background()),
+			Activity: utils.ValueOrFallback(settings.activity, ""),
+		},
+		publishStrategy:      utils.ValueOrFallback(settings.publishStrategy, Immediately),
+		errorStrategy:        utils.ValueOrFallback(settings.errorStrategy, StopOnError),
+		buffer:               utils.ValueOrFallback(settings.buffer, uint64(0)),
+		backpressureStrategy: utils.ValueOrFallback(settings.backpressureStrategy, Block),
+		producer:             producer,
+		downstream:           streams.NewStream[T](),
+		parents:              parents,
+		subs:                 newSubscribers[T](),
+		measurer:             instrumentation.Metrics(),
+		logger:               instrumentation.Logging(),
 	}
 
-	if opts.publishStrategy == Immediately {
+	if obs.publishStrategy == Immediately {
 		obs.Connect()
 	}
 
 	return obs
 }
 
-type upstreamOptions struct {
+type upstreamSettings struct {
 	ctx             context.Context
-	errorStrategy   ErrorStrategy
-	publishStrategy PublishStrategy
+	errorStrategy   *ErrorStrategy
+	publishStrategy *PublishStrategy
 }
 
 type upstreamObservable interface {
 	Connect()
-	cloneOptions() upstreamOptions
+	cloneSettings() upstreamSettings
 }
 
 type Observable[T any] struct {
-	mu   *sync.Mutex
-	opts ObservableOptions
+	mu                   *sync.Mutex
+	settings             *ObservableSettings
+	ctx                  Context
+	backpressureStrategy BackpressureStrategy
+	errorStrategy        ErrorStrategy
+	buffer               uint64
+	publishStrategy      PublishStrategy
 	// producer is a function that produces the upstream stream of items to be observed
-	producer func(streams.Writer[T], ObservableOptions)
+	producer func(ctx Context, writer streams.Writer[T])
 	// parent is the observable that has produced the upstream downstream of items
 	parents []upstreamObservable
 	// downstream is the stream that will Send items to the observer
@@ -251,8 +253,8 @@ type Observable[T any] struct {
 	// connected is a flag that indicates whether the observable has begun observing items from the upstream
 	connected bool
 	subs      *subscribers[T]
-	measurer  Measurer
-	logger    Logger
+	measurer  instrumentation.Measurer
+	logger    instrumentation.Logger
 }
 
 // Connect starts the observation of the upstream stream
@@ -271,53 +273,53 @@ func (o *Observable[T]) Connect() {
 		}
 	}
 
-	upstream := streams.NewStream[T](o.opts.buffer)
+	upstream := streams.NewStream[T](o.buffer)
 
 	go func() {
 		defer o.downstream.Close()
 
 		for {
 			select {
-			case <-o.opts.ctx.Done():
+			case <-o.ctx.Done():
 				now := time.Now()
-				o.downstream.Error(o.opts.ctx.Err())
-				o.measurer.Timing(o.opts.activity, "item_backpressure", time.Since(now))
-				o.measurer.Incr(o.opts.activity, "item_emitted", 1)
-				o.measurer.Incr(o.opts.activity, "error_emitted", 1)
+				o.downstream.Error(o.ctx.Err())
+				o.measurer.Timing(o.ctx.Activity, "item_backpressure", time.Since(now))
+				o.measurer.Incr(o.ctx.Activity, "item_emitted", 1)
+				o.measurer.Incr(o.ctx.Activity, "error_emitted", 1)
 				return
 			case item, ok := <-upstream.Read():
 				if !ok {
 					return
 				}
 
-				if item.Error() != nil && o.opts.errorStrategy == StopOnError {
+				if item.Error() != nil && o.errorStrategy == StopOnError {
 					now := time.Now()
 					o.downstream.Send(item)
-					o.measurer.Timing(o.opts.activity, "item_backpressure", time.Since(now))
-					o.measurer.Incr(o.opts.activity, "item_emitted", 1)
-					o.measurer.Incr(o.opts.activity, "error_emitted", 1)
+					o.measurer.Timing(o.ctx.Activity, "item_backpressure", time.Since(now))
+					o.measurer.Incr(o.ctx.Activity, "item_emitted", 1)
+					o.measurer.Incr(o.ctx.Activity, "error_emitted", 1)
 					return
 				}
 
-				if o.opts.backpressureStrategy == Drop {
+				if o.backpressureStrategy == Drop {
 					now := time.Now()
 					ok := o.downstream.TrySend(item)
 					if ok {
 						// Only record backpressure measurer if the item was successfully sent, otherwise you'll
 						// be measuring backpressure for dropped items which would bring backpressure down to zero,
 						// making the metric useless
-						o.measurer.Timing(o.opts.activity, "item_backpressure", time.Since(now))
-						o.measurer.Incr(o.opts.activity, "item_emitted", 1)
-						o.measurer.Incr(o.opts.activity, "value_emitted", 1)
+						o.measurer.Timing(o.ctx.Activity, "item_backpressure", time.Since(now))
+						o.measurer.Incr(o.ctx.Activity, "item_emitted", 1)
+						o.measurer.Incr(o.ctx.Activity, "value_emitted", 1)
 					} else {
-						o.measurer.Incr(o.opts.activity, "value_dropped", 1)
+						o.measurer.Incr(o.ctx.Activity, "value_dropped", 1)
 					}
 				} else {
 					now := time.Now()
 					o.downstream.Send(item)
-					o.measurer.Timing(o.opts.activity, "item_backpressure", time.Since(now))
-					o.measurer.Incr(o.opts.activity, "item_emitted", 1)
-					o.measurer.Incr(o.opts.activity, "value_emitted", 1)
+					o.measurer.Timing(o.ctx.Activity, "item_backpressure", time.Since(now))
+					o.measurer.Incr(o.ctx.Activity, "item_emitted", 1)
+					o.measurer.Incr(o.ctx.Activity, "value_emitted", 1)
 				}
 			}
 		}
@@ -325,7 +327,8 @@ func (o *Observable[T]) Connect() {
 
 	go func() {
 		defer upstream.Close()
-		o.producer(upstream, o.opts)
+		// TODO: Consider not exporting the observable settings here.. it's a bit clunky.
+		o.producer(o.ctx, upstream)
 	}()
 
 	o.connected = true
@@ -401,34 +404,39 @@ func (o *Observable[T]) Subscribe(onNext OnNextFunc[T], options ...SubscribeOpti
 }
 
 func (o *Observable[T]) getContext() context.Context {
-	return o.opts.ctx
+	return o.ctx
 }
 
 func (o *Observable[T]) setErrorStrategy(strategy ErrorStrategy) {
-	o.opts.errorStrategy = strategy
+	o.errorStrategy = strategy
 }
 
-func (o *Observable[T]) cloneOptions() upstreamOptions {
-	return upstreamOptions{
-		ctx:             o.opts.ctx,
-		errorStrategy:   o.opts.errorStrategy,
-		publishStrategy: o.opts.publishStrategy,
+func (o *Observable[T]) cloneSettings() upstreamSettings {
+	return upstreamSettings{
+		ctx:             o.ctx,
+		errorStrategy:   o.settings.errorStrategy,
+		publishStrategy: o.settings.publishStrategy,
 	}
 }
 
-func propagateOptions(opts *ObservableOptions, parents []upstreamObservable) {
+func propagateSettings(opts *ObservableSettings, parents []upstreamObservable) {
 	ctxs := make([]context.Context, 0, len(parents))
 
 	// Certain settings need to be propagated from parent observable observableOptions to their child
 	// observable observableOptions
 	for _, p := range parents {
-		o := p.cloneOptions()
+		o := p.cloneSettings()
 		ctxs = append(ctxs, o.ctx)
-		opts.WithErrorStrategy(o.errorStrategy)
-		opts.WithPublishStrategy(o.publishStrategy)
+
+		if o.errorStrategy != nil {
+			opts.WithErrorStrategy(*o.errorStrategy)
+		}
+		if o.publishStrategy != nil {
+			opts.WithPublishStrategy(*o.publishStrategy)
+		}
 	}
 
-	opts.ctx = utils.CombinedContexts(ctxs...)
+	opts.ctx = utils.ToPtr(utils.CombinedContexts(ctxs...))
 }
 
 func mapToParentObservable[T any](obs ...*Observable[T]) []upstreamObservable {

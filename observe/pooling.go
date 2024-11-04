@@ -5,12 +5,80 @@ import (
 	"sync"
 	"time"
 
+	"github.com/ducka/go-kayak/instrumentation"
 	"github.com/ducka/go-kayak/streams"
 	"github.com/ducka/go-kayak/utils"
 )
 
 type PoolingStrategy[TIn, TOut any] interface {
 	Execute(ctx Context, operation OperationFunc[TIn, TOut], upstream streams.Reader[TIn], downstream streams.Writer[TOut])
+}
+
+type RoundRobinPoolingStrategy[TIn, TOut any] struct {
+	poolSize int
+}
+
+func NewRoundRobinPoolingStrategy[TIn, TOut any](poolSize int) *RoundRobinPoolingStrategy[TIn, TOut] {
+	if poolSize < 1 {
+		panic("Pool size must be greater than 1")
+	}
+
+	return &RoundRobinPoolingStrategy[TIn, TOut]{poolSize: poolSize}
+}
+
+func (s *RoundRobinPoolingStrategy[TIn, TOut]) Execute(ctx Context, operation OperationFunc[TIn, TOut], upstream streams.Reader[TIn], downstream streams.Writer[TOut]) {
+	opWg := &sync.WaitGroup{}
+	poolWg := &sync.WaitGroup{}
+
+	// Initialise the pool of operations to currently process the upstream
+	pool := make(chan *streams.Stream[TIn], s.poolSize)
+	poolStreamsToClose := make([]*streams.Stream[TIn], s.poolSize)
+	for i := 0; i < s.poolSize; i++ {
+		poolStream := streams.NewStream[TIn]()
+		pool <- poolStream
+		poolStreamsToClose[i] = poolStream
+
+		opWg.Add(1)
+		go func(poolStream streams.Reader[TIn], downstream streams.Writer[TOut]) {
+			defer opWg.Done()
+			now := time.Now()
+			operation(ctx, poolStream, downstream)
+			instrumentation.Metrics().Timing(ctx.Activity, "operation_duration", time.Since(now))
+		}(poolStream, downstream)
+	}
+
+	// Send items to the next available stream in the pool
+	for item := range upstream.Read() {
+		select {
+		case <-ctx.Done():
+			return
+		case nextStream := <-pool:
+			poolWg.Add(1)
+
+			go func(item streams.Notification[TIn], nextStream *streams.Stream[TIn], pool chan *streams.Stream[TIn]) {
+				defer poolWg.Done()
+
+				nextStream.Send(item)
+				// return the stream to the pool
+				pool <- nextStream
+
+			}(item, nextStream, pool)
+		}
+	}
+
+	// Wait until the concurrently running poolStream streams have finished draining
+	poolWg.Wait()
+
+	// Once drained, close the poolStream streams
+	for _, poolStream := range poolStreamsToClose {
+		poolStream.Close()
+	}
+
+	// And close the pool
+	close(pool)
+
+	// Wait until the concurrently executing operations have finished writing to the downstream
+	opWg.Wait()
 }
 
 type PartitionKeySelector[T any] func(item T) string
@@ -70,7 +138,7 @@ func (p *PartitionedPoolingStrategy[TIn, TOut]) Execute(ctx Context, operation O
 			defer opWg.Done()
 			now := time.Now()
 			operation(ctx, poolStream, downstream)
-			measurer.Timing(ctx.Activity, "operation_duration", time.Since(now))
+			instrumentation.Metrics().Timing(ctx.Activity, "operation_duration", time.Since(now))
 		}(poolStream, downstream)
 	}
 
@@ -92,73 +160,6 @@ func (p *PartitionedPoolingStrategy[TIn, TOut]) Execute(ctx Context, operation O
 	for _, poolStream := range pool {
 		poolStream.Close()
 	}
-
-	// Wait until the concurrently executing operations have finished writing to the downstream
-	opWg.Wait()
-}
-
-type RoundRobinPoolingStrategy[TIn, TOut any] struct {
-	poolSize int
-}
-
-func NewRoundRobinPoolingStrategy[TIn, TOut any](poolSize int) *RoundRobinPoolingStrategy[TIn, TOut] {
-	if poolSize < 1 {
-		panic("Pool size must be greater than 1")
-	}
-
-	return &RoundRobinPoolingStrategy[TIn, TOut]{poolSize: poolSize}
-}
-
-func (s *RoundRobinPoolingStrategy[TIn, TOut]) Execute(ctx Context, operation OperationFunc[TIn, TOut], upstream streams.Reader[TIn], downstream streams.Writer[TOut]) {
-	opWg := &sync.WaitGroup{}
-	poolWg := &sync.WaitGroup{}
-
-	// Initialise the pool of operations to currently process the upstream
-	pool := make(chan *streams.Stream[TIn], s.poolSize)
-	poolStreamsToClose := make([]*streams.Stream[TIn], s.poolSize)
-	for i := 0; i < s.poolSize; i++ {
-		poolStream := streams.NewStream[TIn]()
-		pool <- poolStream
-		poolStreamsToClose[i] = poolStream
-
-		opWg.Add(1)
-		go func(poolStream streams.Reader[TIn], downstream streams.Writer[TOut]) {
-			defer opWg.Done()
-			now := time.Now()
-			operation(ctx, poolStream, downstream)
-			measurer.Timing(ctx.Activity, "operation_duration", time.Since(now))
-		}(poolStream, downstream)
-	}
-
-	// Send items to the next available stream in the pool
-	for item := range upstream.Read() {
-		select {
-		case <-ctx.Done():
-			return
-		case nextStream := <-pool:
-			poolWg.Add(1)
-
-			go func(item streams.Notification[TIn], nextStream *streams.Stream[TIn], pool chan *streams.Stream[TIn]) {
-				defer poolWg.Done()
-
-				nextStream.Send(item)
-				// return the stream to the pool
-				pool <- nextStream
-
-			}(item, nextStream, pool)
-		}
-	}
-
-	// Wait until the concurrently running poolStream streams have finished draining
-	poolWg.Wait()
-
-	// Once drained, close the poolStream streams
-	for _, poolStream := range poolStreamsToClose {
-		poolStream.Close()
-	}
-
-	// And close the pool
-	close(pool)
 
 	// Wait until the concurrently executing operations have finished writing to the downstream
 	opWg.Wait()

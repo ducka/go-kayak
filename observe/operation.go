@@ -7,14 +7,14 @@ import (
 type OperationOption[TIn, TOut any] func(builder *OperationOptions[TIn, TOut])
 
 type OperationOptions[TIn, TOut any] struct {
-	observableOptions *ObservableOptions
-	poolingStrategy   PoolingStrategy[TIn, TOut]
+	*ObservableSettings
+	poolingStrategy PoolingStrategy[TIn, TOut]
 }
 
-func NewOperationOptionsBuilder[TIn, TOut any]() *OperationOptions[TIn, TOut] {
+func NewOperationSettings[TIn, TOut any]() *OperationOptions[TIn, TOut] {
 	return &OperationOptions[TIn, TOut]{
-		observableOptions: NewObservableOptionsBuilder(),
-		poolingStrategy:   nil,
+		ObservableSettings: NewObservableSettings(),
+		poolingStrategy:    nil,
 	}
 }
 
@@ -24,10 +24,10 @@ func (b *OperationOptions[TIn, TOut]) apply(options ...OperationOption[TIn, TOut
 	}
 }
 
-func (b *OperationOptions[TIn, TOut]) toObservableOptions() []ObservableOption {
+func (b *OperationOptions[TIn, TOut]) toOptions() []ObservableOption {
 	return []ObservableOption{
-		func(options *ObservableOptions) {
-			b.observableOptions.copyTo(options)
+		func(options *ObservableSettings) {
+			b.ObservableSettings.copyTo(options)
 		},
 	}
 }
@@ -55,28 +55,23 @@ func Operation[TIn any, TOut any](
 	operation OperationFunc[TIn, TOut],
 	options ...OperationOption[TIn, TOut],
 ) *Observable[TOut] {
-	o := NewOperationOptionsBuilder[TIn, TOut]()
-	o.apply(options...)
+	settings := NewOperationSettings[TIn, TOut]()
+	settings.apply(options...)
 
 	observable := newObservable[TOut](
-		func(downstream streams.Writer[TOut], observableOptions ObservableOptions) {
+		func(ctx Context, downstream streams.Writer[TOut]) {
 			upstream := source.ToStream()
-			usePool := o.poolingStrategy != nil
-
-			ctx := Context{
-				Context:  observableOptions.ctx,
-				Activity: observableOptions.activity,
-			}
+			usePool := settings.poolingStrategy != nil
 
 			if !usePool {
 				operation(ctx, upstream, downstream)
 				return
 			}
 
-			o.poolingStrategy.Execute(ctx, operation, upstream, downstream)
+			settings.poolingStrategy.Execute(ctx, operation, upstream, downstream)
 		},
 		mapToParentObservable(source),
-		o.toObservableOptions()...,
+		settings.toOptions()...,
 	)
 
 	return observable

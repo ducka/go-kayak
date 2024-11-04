@@ -18,7 +18,7 @@ func TestObservable(t *testing.T) {
 
 		sut := Producer[int](
 			produceSequence(sequence...),
-			func(options *ObservableOptions) {
+			func(options *ObservableSettings) {
 				options.WithErrorStrategy(StopOnError)
 			},
 		)
@@ -44,7 +44,7 @@ func TestObservable(t *testing.T) {
 
 		sut := Producer[int](
 			produceSequence(sequence...),
-			func(options *ObservableOptions) {
+			func(options *ObservableSettings) {
 				options.WithErrorStrategy(StopOnError)
 			},
 		)
@@ -68,12 +68,12 @@ func TestObservable(t *testing.T) {
 		err := errors.New("error")
 
 		sut := Producer[int](
-			func(stream streams.Writer[int]) {
+			func(ctx Context, stream streams.Writer[int]) {
 				stream.Write(1)
 				stream.Error(err)
 				stream.Write(3)
 			},
-			func(options *ObservableOptions) {
+			func(options *ObservableSettings) {
 				options.WithErrorStrategy(ContinueOnError)
 			},
 		)
@@ -105,17 +105,17 @@ func TestObservable(t *testing.T) {
 		sequenceLength := 20
 
 		sut := Producer[int](
-			func(Writer streams.Writer[int]) {
+			func(ctx Context, writer streams.Writer[int]) {
 				for i := 0; i < sequenceLength; i++ {
 					// Cancel the getContext of the observable half way through the producer processing the sequence
 					if sequenceLength/2 == i {
 						cancel()
 					}
 
-					Writer.Write(i)
+					writer.Write(i)
 				}
 			},
-			func(options *ObservableOptions) {
+			func(options *ObservableSettings) {
 				options.WithContext(ctx)
 			},
 		)
@@ -137,7 +137,7 @@ func TestObservable(t *testing.T) {
 			ob1, _ := Timer(100 * time.Millisecond)
 			ob2, _ := Timer(
 				100*time.Millisecond,
-				func(options *ObservableOptions) {
+				func(options *ObservableSettings) {
 					options.WithContext(ctx)
 				},
 			)
@@ -163,7 +163,7 @@ func TestObservable(t *testing.T) {
 		expected := []any{1, errors.New("error"), 2}
 		sut := Producer[int](
 			produceSequence(expected...),
-			func(options *ObservableOptions) {
+			func(options *ObservableSettings) {
 				options.WithErrorStrategy(StopOnError)
 			},
 		)
@@ -177,7 +177,7 @@ func TestObservable(t *testing.T) {
 		expected := []any{1, errors.New("error"), 2}
 		sut := Producer[int](
 			produceSequence(expected...),
-			func(options *ObservableOptions) {
+			func(options *ObservableSettings) {
 				options.WithErrorStrategy(ContinueOnError)
 			},
 		)
@@ -193,13 +193,13 @@ func TestObservable(t *testing.T) {
 		wg.Add(1)
 
 		sut := Producer[int](
-			func(Writer streams.Writer[int]) {
+			func(ctx Context, writer streams.Writer[int]) {
 				for i := 0; i < sequenceLength; i++ {
-					Writer.Write(i)
+					writer.Write(i)
 				}
 				wg.Done()
 			},
-			func(options *ObservableOptions) {
+			func(options *ObservableSettings) {
 				options.WithBackpressureStrategy(Drop)
 			},
 		)
@@ -220,12 +220,12 @@ func TestObservable(t *testing.T) {
 	t.Run("When an observable uses a Block backpressure strategy", func(t *testing.T) {
 		sequenceLength := 100
 		sut := Producer[int](
-			func(Writer streams.Writer[int]) {
+			func(ctx Context, writer streams.Writer[int]) {
 				for i := 0; i < sequenceLength; i++ {
-					Writer.Write(i)
+					writer.Write(i)
 				}
 			},
-			func(options *ObservableOptions) {
+			func(options *ObservableSettings) {
 				options.WithBackpressureStrategy(Block)
 			},
 		)
@@ -253,12 +253,12 @@ func TestObservable(t *testing.T) {
 	t.Run("When an observable uses a Block backpressure strategy", func(t *testing.T) {
 		sequenceLength := 100
 		sut := Producer[int](
-			func(Writer streams.Writer[int]) {
+			func(ctx Context, writer streams.Writer[int]) {
 				for i := 0; i < sequenceLength; i++ {
-					Writer.Write(i)
+					writer.Write(i)
 				}
 			},
-			func(options *ObservableOptions) {
+			func(options *ObservableSettings) {
 				options.WithBackpressureStrategy(Block)
 			},
 		)
@@ -333,19 +333,19 @@ func TestObservable(t *testing.T) {
 		bufferSize := uint64(10)
 
 		ob := Producer[int](
-			func(Writer streams.Writer[int]) {
+			func(ctx Context, writer streams.Writer[int]) {
 				for i := 0; i < 15; i++ {
 					// increment the counter to observe the buffer filling up
 					mu.Lock()
 					actual++
 					mu.Unlock()
 
-					Writer.Write(i)
+					writer.Write(i)
 				}
 
 			},
 
-			func(options *ObservableOptions) {
+			func(options *ObservableSettings) {
 				options.WithBuffer(bufferSize)
 			},
 		)
@@ -428,7 +428,7 @@ func TestObservable(t *testing.T) {
 		expected := GenerateIntSequence(0, 10)
 		ob := Sequence(
 			expected,
-			func(options *ObservableOptions) {
+			func(options *ObservableSettings) {
 				options.WithPublishStrategy(Immediately)
 			},
 		)
@@ -456,7 +456,7 @@ func TestObservable(t *testing.T) {
 		expected := GenerateIntSequence(0, 10)
 		ob := Sequence(
 			expected,
-			func(options *ObservableOptions) {
+			func(options *ObservableSettings) {
 				options.WithPublishStrategy(OnConnect)
 			},
 		)
@@ -521,8 +521,8 @@ func makeSubscriber(strategy ErrorStrategy, sequence ...any) *SubscriberMock[int
 	return subscriber
 }
 
-func produceSequence(sequence ...any) func(stream streams.Writer[int]) {
-	return func(stream streams.Writer[int]) {
+func produceSequence(sequence ...any) func(ctx Context, stream streams.Writer[int]) {
+	return func(ctx Context, stream streams.Writer[int]) {
 		for _, v := range sequence {
 			if err, ok := v.(error); ok {
 				stream.Error(err)

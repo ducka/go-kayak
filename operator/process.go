@@ -16,7 +16,6 @@ func Process[TIn, TOut any](processor ProcessorFunc[TIn, TOut], opts ...observe.
 	}
 	opts = defaultActivityName("Process", opts)
 	return func(source *observe.Observable[TIn]) *observe.Observable[TOut] {
-
 		return observe.Operation[TIn, TOut](
 			source,
 			func(ctx observe.Context, upstream streams.Reader[TIn], downstream streams.Writer[TOut]) {
