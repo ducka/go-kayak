@@ -1,4 +1,4 @@
-package go_kayak
+package kayak
 
 import (
 	"context"
@@ -85,7 +85,9 @@ func TestDemo(t *testing.T) {
 	wg.Add(1)
 
 	ob := observe.Pipe7(
-		observe.Range(0, 100, observe.WithActivityName("Observing kafka")),
+		observe.Range(0, 100, func(builder *observe.ObservableOptions[int]) {
+			builder.WithActivityName("Observing kafka")
+		}),
 		operator.Filter[int](func(item int) bool {
 			// only emit even numbers
 			return item%2 == 0
@@ -100,7 +102,12 @@ func TestDemo(t *testing.T) {
 		}),
 		operator.Throttle[string](1, 100*time.Millisecond),
 		// should emit 2 batches concurrently
-		operator.Batch[string](5, observe.WithPool(2)),
+		operator.Batch[string](
+			5,
+			func(options *observe.OperationOptions[string, []string]) {
+				options.WithPool(2)
+			},
+		),
 		operator.Print[[]string]("batches:"),
 		operator.Flatten[string](),
 	)

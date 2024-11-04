@@ -18,7 +18,7 @@ func TestObservable(t *testing.T) {
 
 		sut := Producer[int](
 			produceSequence(sequence...),
-			func(options *ObservableOptionsBuilder[int]) {
+			func(options *ObservableOptions) {
 				options.WithErrorStrategy(StopOnError)
 			},
 		)
@@ -44,7 +44,7 @@ func TestObservable(t *testing.T) {
 
 		sut := Producer[int](
 			produceSequence(sequence...),
-			func(options *ObservableOptionsBuilder[int]) {
+			func(options *ObservableOptions) {
 				options.WithErrorStrategy(StopOnError)
 			},
 		)
@@ -73,7 +73,7 @@ func TestObservable(t *testing.T) {
 				stream.Error(err)
 				stream.Write(3)
 			},
-			func(options *ObservableOptionsBuilder[int]) {
+			func(options *ObservableOptions) {
 				options.WithErrorStrategy(ContinueOnError)
 			},
 		)
@@ -115,7 +115,7 @@ func TestObservable(t *testing.T) {
 					Writer.Write(i)
 				}
 			},
-			func(options *ObservableOptionsBuilder[int]) {
+			func(options *ObservableOptions) {
 				options.WithContext(ctx)
 			},
 		)
@@ -137,7 +137,7 @@ func TestObservable(t *testing.T) {
 			ob1, _ := Timer(100 * time.Millisecond)
 			ob2, _ := Timer(
 				100*time.Millisecond,
-				func(options *ObservableOptionsBuilder[time.Time]) {
+				func(options *ObservableOptions) {
 					options.WithContext(ctx)
 				},
 			)
@@ -163,7 +163,7 @@ func TestObservable(t *testing.T) {
 		expected := []any{1, errors.New("error"), 2}
 		sut := Producer[int](
 			produceSequence(expected...),
-			func(options *ObservableOptionsBuilder[int]) {
+			func(options *ObservableOptions) {
 				options.WithErrorStrategy(StopOnError)
 			},
 		)
@@ -177,7 +177,7 @@ func TestObservable(t *testing.T) {
 		expected := []any{1, errors.New("error"), 2}
 		sut := Producer[int](
 			produceSequence(expected...),
-			func(options *ObservableOptionsBuilder[int]) {
+			func(options *ObservableOptions) {
 				options.WithErrorStrategy(ContinueOnError)
 			},
 		)
@@ -199,7 +199,7 @@ func TestObservable(t *testing.T) {
 				}
 				wg.Done()
 			},
-			func(options *ObservableOptionsBuilder[int]) {
+			func(options *ObservableOptions) {
 				options.WithBackpressureStrategy(Drop)
 			},
 		)
@@ -225,7 +225,7 @@ func TestObservable(t *testing.T) {
 					Writer.Write(i)
 				}
 			},
-			func(options *ObservableOptionsBuilder[int]) {
+			func(options *ObservableOptions) {
 				options.WithBackpressureStrategy(Block)
 			},
 		)
@@ -258,7 +258,7 @@ func TestObservable(t *testing.T) {
 					Writer.Write(i)
 				}
 			},
-			func(options *ObservableOptionsBuilder[int]) {
+			func(options *ObservableOptions) {
 				options.WithBackpressureStrategy(Block)
 			},
 		)
@@ -345,7 +345,7 @@ func TestObservable(t *testing.T) {
 
 			},
 
-			func(options *ObservableOptionsBuilder[int]) {
+			func(options *ObservableOptions) {
 				options.WithBuffer(bufferSize)
 			},
 		)
@@ -428,7 +428,7 @@ func TestObservable(t *testing.T) {
 		expected := GenerateIntSequence(0, 10)
 		ob := Sequence(
 			expected,
-			func(options *ObservableOptionsBuilder[int]) {
+			func(options *ObservableOptions) {
 				options.WithPublishStrategy(Immediately)
 			},
 		)
@@ -456,7 +456,7 @@ func TestObservable(t *testing.T) {
 		expected := GenerateIntSequence(0, 10)
 		ob := Sequence(
 			expected,
-			func(options *ObservableOptionsBuilder[int]) {
+			func(options *ObservableOptions) {
 				options.WithPublishStrategy(OnConnect)
 			},
 		)

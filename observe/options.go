@@ -4,13 +4,9 @@ import (
 	"context"
 )
 
-type ObservableOption[TIn any] func(builder *ObservableOptionsBuilder[TIn])
+type ObservableOption func(options *ObservableOptions)
 
-type ObservableOptionsBuilder[TIn any] struct {
-	observableOptions
-}
-
-type observableOptions struct {
+type ObservableOptions struct {
 	ctx                  context.Context
 	activity             string
 	backpressureStrategy BackpressureStrategy
@@ -19,50 +15,57 @@ type observableOptions struct {
 	publishStrategy      PublishStrategy
 }
 
-func NewObservableOptionsBuilder[TIn any]() *ObservableOptionsBuilder[TIn] {
-	return &ObservableOptionsBuilder[TIn]{
-		observableOptions: observableOptions{
-			ctx:                  context.Background(),
-			backpressureStrategy: defaultBackpressureStrategy,
-			errorStrategy:        defaultErrorStrategy,
-			publishStrategy:      defaultPublishStrategy,
-		},
+func NewObservableOptionsBuilder() *ObservableOptions {
+	return &ObservableOptions{
+		ctx:                  context.Background(),
+		backpressureStrategy: defaultBackpressureStrategy,
+		errorStrategy:        defaultErrorStrategy,
+		publishStrategy:      defaultPublishStrategy,
 	}
 }
 
-func (b *ObservableOptionsBuilder[TIn]) apply(options ...ObservableOption[TIn]) {
+func (b *ObservableOptions) apply(options ...ObservableOption) {
 	for _, opt := range options {
 		opt(b)
 	}
 }
 
-func (b *ObservableOptionsBuilder[TIn]) WithContext(ctx context.Context) *ObservableOptionsBuilder[TIn] {
-	b.observableOptions.ctx = ctx
+func (b *ObservableOptions) copyTo(o *ObservableOptions) {
+	o.ctx = b.ctx
+	o.activity = b.activity
+	o.backpressureStrategy = b.backpressureStrategy
+	o.errorStrategy = b.errorStrategy
+	o.buffer = b.buffer
+	o.publishStrategy = b.publishStrategy
+}
+
+func (b *ObservableOptions) WithContext(ctx context.Context) *ObservableOptions {
+	b.ctx = ctx
 	return b
 }
 
-func (b *ObservableOptionsBuilder[TIn]) WithPublishStrategy(publishStrategy PublishStrategy) *ObservableOptionsBuilder[TIn] {
-	b.observableOptions.publishStrategy = publishStrategy
+func (b *ObservableOptions) WithPublishStrategy(publishStrategy PublishStrategy) *ObservableOptions {
+	b.publishStrategy = publishStrategy
 	return b
 }
 
-func (b *ObservableOptionsBuilder[TIn]) WithErrorStrategy(errorStrategy ErrorStrategy) *ObservableOptionsBuilder[TIn] {
-	b.observableOptions.errorStrategy = errorStrategy
+func (b *ObservableOptions) WithErrorStrategy(errorStrategy ErrorStrategy) *ObservableOptions {
+	b.errorStrategy = errorStrategy
 	return b
 }
 
-func (b *ObservableOptionsBuilder[TIn]) WithBackpressureStrategy(backpressureStrategy BackpressureStrategy) *ObservableOptionsBuilder[TIn] {
-	b.observableOptions.backpressureStrategy = backpressureStrategy
+func (b *ObservableOptions) WithBackpressureStrategy(backpressureStrategy BackpressureStrategy) *ObservableOptions {
+	b.backpressureStrategy = backpressureStrategy
 	return b
 }
 
-func (b *ObservableOptionsBuilder[TIn]) WithActivityName(activity string) *ObservableOptionsBuilder[TIn] {
-	b.observableOptions.activity = activity
+func (b *ObservableOptions) WithActivityName(activity string) *ObservableOptions {
+	b.activity = activity
 	return b
 }
 
-func (b *ObservableOptionsBuilder[TIn]) WithBuffer(bufferSize uint64) *ObservableOptionsBuilder[TIn] {
-	b.observableOptions.buffer = bufferSize
+func (b *ObservableOptions) WithBuffer(bufferSize uint64) *ObservableOptions {
+	b.buffer = bufferSize
 	return b
 }
 

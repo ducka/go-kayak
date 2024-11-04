@@ -22,10 +22,10 @@ func MergeWithDelayedErrors[T any](observables ...*Observable[T]) *Observable[T]
 func merge[T any](
 	observables []*Observable[T],
 	delayErrors bool,
-	opts ...ObservableOption[T],
+	opts ...ObservableOption,
 ) *Observable[T] {
 	return newObservable[T](
-		func(downstream streams.Writer[T], opts observableOptions) {
+		func(downstream streams.Writer[T], opts ObservableOptions) {
 			mu := &sync.Mutex{}
 			startWg := &sync.WaitGroup{}
 			startWg.Add(1)

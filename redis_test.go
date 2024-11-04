@@ -1,4 +1,4 @@
-package go_kayak
+package kayak
 
 import (
 	"context"

@@ -14,7 +14,6 @@ type NilMeasurer struct{}
 func (*NilMeasurer) Incr(activity string, name string, value float64, tags ...string)         {}
 func (*NilMeasurer) Timing(activity string, name string, value time.Duration, tags ...string) {}
 
-// TODO: Pare back this interface as required.
 type Logger interface {
 	Debug(activity string, message string)
 	Error(activity string, message string)

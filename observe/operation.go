@@ -4,43 +4,46 @@ import (
 	"github.com/ducka/go-kayak/streams"
 )
 
-type OperationOption[TIn, TOut any] func(builder *OperationOptionsBuilder[TIn, TOut])
+type OperationOption[TIn, TOut any] func(builder *OperationOptions[TIn, TOut])
 
-type operationOptions[TIn, TOut any] struct {
-	poolingStrategy PoolingStrategy[TIn, TOut]
+type OperationOptions[TIn, TOut any] struct {
+	observableOptions *ObservableOptions
+	poolingStrategy   PoolingStrategy[TIn, TOut]
 }
 
-type OperationOptionsBuilder[TIn, TOut any] struct {
-	ObservableOptionsBuilder[TOut]
-	operationOptions[TIn, TOut]
+func NewOperationOptionsBuilder[TIn, TOut any]() *OperationOptions[TIn, TOut] {
+	return &OperationOptions[TIn, TOut]{
+		observableOptions: NewObservableOptionsBuilder(),
+		poolingStrategy:   nil,
+	}
 }
 
-func (b *OperationOptionsBuilder[TIn, TOut]) apply(options ...OperationOption[TIn, TOut]) {
+func (b *OperationOptions[TIn, TOut]) apply(options ...OperationOption[TIn, TOut]) {
 	for _, opt := range options {
 		opt(b)
 	}
 }
 
-func (b *OperationOptionsBuilder[TIn, TOut]) toObservableOptions() []ObservableOption[TOut] {
-	return []ObservableOption[TOut]{
-		func(builder *ObservableOptionsBuilder[TOut]) {
-			builder.observableOptions = b.observableOptions
+func (b *OperationOptions[TIn, TOut]) toObservableOptions() []ObservableOption {
+	return []ObservableOption{
+		func(options *ObservableOptions) {
+			b.observableOptions.copyTo(options)
 		},
 	}
 }
 
-func (b *OperationOptionsBuilder[TIn, TOut]) WithPool(poolSize int) *OperationOptionsBuilder[TIn, TOut] {
+func (b *OperationOptions[TIn, TOut]) WithPool(poolSize int) *OperationOptions[TIn, TOut] {
 	b.WithPoolStrategy(NewRoundRobinPoolingStrategy[TIn, TOut](poolSize))
 	return b
 }
 
-func (b *OperationOptionsBuilder[TIn, TOut]) WithPartitionedPool(poolSize int, keySelector PartitionKeySelector[TIn]) *OperationOptionsBuilder[TIn, TOut] {
-	b.WithPoolStrategy(NewPartitionedPoolingStrategy[TIn, TOut](poolSize, keySelector, DefaultHashFunc))
+func (b *OperationOptions[TIn, TOut]) WithPartitionedPool(keySelector PartitionKeySelector[TIn], settings ...ParitionedPoolSettings) *OperationOptions[TIn, TOut] {
+	b.WithPoolStrategy(NewPartitionedPoolingStrategy[TIn, TOut](keySelector, settings...))
 	return b
 }
 
-func (b *OperationOptionsBuilder[TIn, TOut]) WithPoolStrategy(strategy PoolingStrategy[TIn, TOut]) *OperationOptionsBuilder[TIn, TOut] {
-	b.operationOptions.poolingStrategy = strategy
+func (b *OperationOptions[TIn, TOut]) WithPoolStrategy(strategy PoolingStrategy[TIn, TOut]) *OperationOptions[TIn, TOut] {
+	b.poolingStrategy = strategy
 	return b
 }
 
@@ -50,15 +53,15 @@ func (b *OperationOptionsBuilder[TIn, TOut]) WithPoolStrategy(strategy PoolingSt
 func Operation[TIn any, TOut any](
 	source *Observable[TIn],
 	operation OperationFunc[TIn, TOut],
-	opts ...OperationOption[TIn, TOut],
+	options ...OperationOption[TIn, TOut],
 ) *Observable[TOut] {
-	operationOptions := OperationOptionsBuilder[TIn, TOut]{}
-	operationOptions.apply(opts...)
+	o := NewOperationOptionsBuilder[TIn, TOut]()
+	o.apply(options...)
 
 	observable := newObservable[TOut](
-		func(downstream streams.Writer[TOut], observableOptions observableOptions) {
+		func(downstream streams.Writer[TOut], observableOptions ObservableOptions) {
 			upstream := source.ToStream()
-			usePool := operationOptions.poolingStrategy != nil
+			usePool := o.poolingStrategy != nil
 
 			ctx := Context{
 				Context:  observableOptions.ctx,
@@ -70,10 +73,10 @@ func Operation[TIn any, TOut any](
 				return
 			}
 
-			operationOptions.poolingStrategy.Execute(ctx, operation, upstream, downstream)
+			o.poolingStrategy.Execute(ctx, operation, upstream, downstream)
 		},
 		mapToParentObservable(source),
-		operationOptions.toObservableOptions()...,
+		o.toObservableOptions()...,
 	)
 
 	return observable

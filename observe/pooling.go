@@ -1,10 +1,12 @@
 package observe
 
 import (
+	"runtime"
 	"sync"
 	"time"
 
 	"github.com/ducka/go-kayak/streams"
+	"github.com/ducka/go-kayak/utils"
 )
 
 type PoolingStrategy[TIn, TOut any] interface {
@@ -12,35 +14,58 @@ type PoolingStrategy[TIn, TOut any] interface {
 }
 
 type PartitionKeySelector[T any] func(item T) string
-type HashFunc func(string) int64
+type HashFunc func(string) uint16
 
-func DefaultHashFunc(string) int64 {
-	return 1
+func DefaultHashFunc(key string) uint16 {
+	return utils.Crc16(key)
 }
 
 type PartitionedPoolingStrategy[TIn, TOut any] struct {
 	keySelector PartitionKeySelector[TIn]
 	hashFunc    HashFunc
-	poolSize    int
+	poolSize    uint16
+	bufferSize  uint64
 }
 
-func NewPartitionedPoolingStrategy[TIn, TOut any](poolSize int, keySelector PartitionKeySelector[TIn], hashFunc HashFunc) *PartitionedPoolingStrategy[TIn, TOut] {
-	return &PartitionedPoolingStrategy[TIn, TOut]{keySelector: keySelector, hashFunc: hashFunc, poolSize: poolSize}
+type ParitionedPoolSettings struct {
+	PoolSize   *uint16
+	BufferSize *uint64
+	HashFunc   *HashFunc
+}
+
+func NewPartitionedPoolingStrategy[TIn, TOut any](keySelector PartitionKeySelector[TIn], settings ...ParitionedPoolSettings) *PartitionedPoolingStrategy[TIn, TOut] {
+	strategy := &PartitionedPoolingStrategy[TIn, TOut]{
+		keySelector: keySelector,
+		hashFunc:    DefaultHashFunc,
+		poolSize:    uint16(runtime.NumCPU()),
+		bufferSize:  0,
+	}
+
+	if len(settings) > 0 {
+		if settings[0].HashFunc != nil {
+			strategy.hashFunc = *settings[0].HashFunc
+		}
+		if settings[0].PoolSize != nil {
+			strategy.poolSize = *settings[0].PoolSize
+		}
+		if settings[0].BufferSize != nil {
+			strategy.bufferSize = *settings[0].BufferSize
+		}
+	}
+
+	return strategy
 }
 
 func (p *PartitionedPoolingStrategy[TIn, TOut]) Execute(ctx Context, operation OperationFunc[TIn, TOut], upstream streams.Reader[TIn], downstream streams.Writer[TOut]) {
 	opWg := &sync.WaitGroup{}
-	poolWg := &sync.WaitGroup{}
+	pool := make([]*streams.Stream[TIn], p.poolSize)
 
 	// Initialise the pool of operations to currently process the upstream
-	pool := make(chan *streams.Stream[TIn], s.poolSize)
-	poolStreamsToClose := make([]*streams.Stream[TIn], s.poolSize)
-	for i := 0; i < s.poolSize; i++ {
-		poolStream := streams.NewStream[TIn]()
-		pool <- poolStream
-		poolStreamsToClose[i] = poolStream
-
+	for i := uint16(0); i < p.poolSize; i++ {
+		poolStream := streams.NewStream[TIn](p.bufferSize)
+		pool[i] = poolStream
 		opWg.Add(1)
+
 		go func(poolStream streams.Reader[TIn], downstream streams.Writer[TOut]) {
 			defer opWg.Done()
 			now := time.Now()
@@ -54,30 +79,19 @@ func (p *PartitionedPoolingStrategy[TIn, TOut]) Execute(ctx Context, operation O
 		select {
 		case <-ctx.Done():
 			return
-		case nextStream := <-pool:
-			poolWg.Add(1)
-
-			go func(item streams.Notification[TIn], nextStream *streams.Stream[TIn], pool chan *streams.Stream[TIn]) {
-				defer poolWg.Done()
-
-				nextStream.Send(item)
-				// return the stream to the pool
-				pool <- nextStream
-
-			}(item, nextStream, pool)
+		default:
+			key := p.keySelector(item.Value())
+			hashTag := p.hashFunc(key)
+			slot := hashTag % p.poolSize
+			poolStream := pool[slot]
+			poolStream.Send(item)
 		}
 	}
 
-	// Wait until the concurrently running poolStream streams have finished draining
-	poolWg.Wait()
-
 	// Once drained, close the poolStream streams
-	for _, poolStream := range poolStreamsToClose {
+	for _, poolStream := range pool {
 		poolStream.Close()
 	}
-
-	// And close the pool
-	close(pool)
 
 	// Wait until the concurrently executing operations have finished writing to the downstream
 	opWg.Wait()
