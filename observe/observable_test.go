@@ -284,47 +284,48 @@ func TestObservable(t *testing.T) {
 		})
 	})
 
-	t.Run("When an observable operator uses a pool for concurrency and a workload is generated to fully utilise the pool", func(t *testing.T) {
-		t.Fail()
-		//now := time.Now()
-		//poolSize := 5
-		//wg := &sync.WaitGroup{}
-		//wg.Add(poolSize)
-		//mu := &sync.Mutex{}
-		//
-		//ob := Sequence(GenerateIntSequence(0, 15))
-		//
-		//activeProducers := 0
-		//
-		//op := Operation[int, int](
-		//	ob,
-		//	func(ctx Context, s streams.Reader[int], s2 streams.Writer[int]) {
-		//		// The number of times this operator function executes should equal the pool size. Each operator function has its own
-		//		// stream which is written to in a roundrobin style concurrently. If this active producers count doesn't match the pool
-		//		// size, this should indicate a bug in the pool implementation.
-		//		mu.Lock()
-		//		activeProducers++
-		//		mu.Unlock()
-		//
-		//		for item := range s.Read() {
-		//			time.Sleep(100 * time.Millisecond)
-		//			s2.Send(item)
-		//		}
-		//	},
-		//	WithPool(poolSize),
-		//)
+	t.Run("When an observable operator uses a round robin pool for concurrency and a workload is generated to fully utilise the pool", func(t *testing.T) {
+		now := time.Now()
+		poolSize := 5
+		wg := &sync.WaitGroup{}
+		wg.Add(poolSize)
+		mu := &sync.Mutex{}
 
-		//results := op.ToResult()
-		//
-		//t.Run("Then the pool should be fully utilized", func(t *testing.T) {
-		//	assert.Equal(t, poolSize, activeProducers)
-		//})
-		//
-		//t.Run("Then the pipeline should execute in the expected time", func(t *testing.T) {
-		//	shouldTake := 300 * time.Millisecond
-		//	assert.WithinDuration(t, now.Add(shouldTake), time.Now(), 20*time.Millisecond)
-		//	assert.Len(t, results, 15)
-		//})
+		ob := Sequence(GenerateIntSequence(0, 15))
+
+		activeProducers := 0
+
+		op := Operation[int, int](
+			ob,
+			func(ctx Context, s streams.Reader[int], s2 streams.Writer[int]) {
+				// The number of times this operator function executes should equal the pool size. Each operator function has its own
+				// stream which is written to in a roundrobin style concurrently. If this active producers count doesn't match the pool
+				// size, this should indicate a bug in the pool implementation.
+				mu.Lock()
+				activeProducers++
+				mu.Unlock()
+
+				for item := range s.Read() {
+					time.Sleep(100 * time.Millisecond)
+					s2.Send(item)
+				}
+			},
+			func(settings *OperationSettings[int, int]) {
+				settings.WithRoundRobinPool(poolSize)
+			},
+		)
+
+		results := op.ToResult()
+
+		t.Run("Then the pool should be fully utilized", func(t *testing.T) {
+			assert.Equal(t, poolSize, activeProducers)
+		})
+
+		t.Run("Then the pipeline should execute in the expected time", func(t *testing.T) {
+			shouldTake := 300 * time.Millisecond
+			assert.WithinDuration(t, now.Add(shouldTake), time.Now(), 20*time.Millisecond)
+			assert.Len(t, results, 15)
+		})
 	})
 
 	t.Run("When configuring an observable with a buffer", func(t *testing.T) {

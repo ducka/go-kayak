@@ -41,12 +41,17 @@ func TestMap(t *testing.T) {
 
 		t.Run("And an error occurs midway", func(t *testing.T) {
 			err := errors.New("error")
-			m := Map(func(item int, index int) (string, error) {
-				if item == 2 {
-					return "2", err
-				}
-				return strconv.Itoa(item), nil
-			}, observe.WithErrorStrategy(observe.ContinueOnError))(ob)
+			m := Map(
+				func(item int, index int) (string, error) {
+					if item == 2 {
+						return "2", err
+					}
+					return strconv.Itoa(item), nil
+				},
+				func(settings *observe.OperationSettings[int, string]) {
+					settings.WithErrorStrategy(observe.ContinueOnError)
+				},
+			)(ob)
 
 			t.Run("Then the emitted notifications should be a mixture of strings and errors", func(t *testing.T) {
 				assert.EqualValues(t,

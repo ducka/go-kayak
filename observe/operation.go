@@ -4,27 +4,27 @@ import (
 	"github.com/ducka/go-kayak/streams"
 )
 
-type OperationOption[TIn, TOut any] func(builder *OperationOptions[TIn, TOut])
+type OperationOption[TIn, TOut any] func(settings *OperationSettings[TIn, TOut])
 
-type OperationOptions[TIn, TOut any] struct {
+type OperationSettings[TIn, TOut any] struct {
 	*ObservableSettings
 	poolingStrategy PoolingStrategy[TIn, TOut]
 }
 
-func NewOperationSettings[TIn, TOut any]() *OperationOptions[TIn, TOut] {
-	return &OperationOptions[TIn, TOut]{
+func NewOperationSettings[TIn, TOut any]() *OperationSettings[TIn, TOut] {
+	return &OperationSettings[TIn, TOut]{
 		ObservableSettings: NewObservableSettings(),
 		poolingStrategy:    nil,
 	}
 }
 
-func (b *OperationOptions[TIn, TOut]) apply(options ...OperationOption[TIn, TOut]) {
+func (b *OperationSettings[TIn, TOut]) apply(options ...OperationOption[TIn, TOut]) {
 	for _, opt := range options {
 		opt(b)
 	}
 }
 
-func (b *OperationOptions[TIn, TOut]) toOptions() []ObservableOption {
+func (b *OperationSettings[TIn, TOut]) toOptions() []ObservableOption {
 	return []ObservableOption{
 		func(options *ObservableSettings) {
 			b.ObservableSettings.copyTo(options)
@@ -32,17 +32,17 @@ func (b *OperationOptions[TIn, TOut]) toOptions() []ObservableOption {
 	}
 }
 
-func (b *OperationOptions[TIn, TOut]) WithPool(poolSize int) *OperationOptions[TIn, TOut] {
+func (b *OperationSettings[TIn, TOut]) WithRoundRobinPool(poolSize int) *OperationSettings[TIn, TOut] {
 	b.WithPoolStrategy(NewRoundRobinPoolingStrategy[TIn, TOut](poolSize))
 	return b
 }
 
-func (b *OperationOptions[TIn, TOut]) WithPartitionedPool(keySelector PartitionKeySelector[TIn], settings ...ParitionedPoolSettings) *OperationOptions[TIn, TOut] {
+func (b *OperationSettings[TIn, TOut]) WithPartitionedPool(keySelector PartitionKeySelector[TIn], settings ...ParitionedPoolSettings) *OperationSettings[TIn, TOut] {
 	b.WithPoolStrategy(NewPartitionedPoolingStrategy[TIn, TOut](keySelector, settings...))
 	return b
 }
 
-func (b *OperationOptions[TIn, TOut]) WithPoolStrategy(strategy PoolingStrategy[TIn, TOut]) *OperationOptions[TIn, TOut] {
+func (b *OperationSettings[TIn, TOut]) WithPoolStrategy(strategy PoolingStrategy[TIn, TOut]) *OperationSettings[TIn, TOut] {
 	b.poolingStrategy = strategy
 	return b
 }

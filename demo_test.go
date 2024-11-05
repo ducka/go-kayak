@@ -85,8 +85,8 @@ func TestDemo(t *testing.T) {
 	wg.Add(1)
 
 	ob := observe.Pipe7(
-		observe.Range(0, 100, func(builder *observe.ObservableSettings[int]) {
-			builder.WithActivityName("Observing kafka")
+		observe.Range(0, 100, func(settings *observe.ObservableSettings) {
+			settings.WithActivityName("Observing kafka")
 		}),
 		operator.Filter[int](func(item int) bool {
 			// only emit even numbers
@@ -104,8 +104,8 @@ func TestDemo(t *testing.T) {
 		// should emit 2 batches concurrently
 		operator.Batch[string](
 			5,
-			func(options *observe.OperationOptions[string, []string]) {
-				options.WithPool(2)
+			func(options *observe.OperationSettings[string, []string]) {
+				options.WithRoundRobinPool(2)
 			},
 		),
 		operator.Print[[]string]("batches:"),

@@ -7,7 +7,7 @@ import (
 func defaultActivityName[TIn, TOut any](name string, opts []observe.OperationOption[TIn, TOut]) []observe.OperationOption[TIn, TOut] {
 	return append(
 		[]observe.OperationOption[TIn, TOut]{
-			func(settings *observe.OperationOptions[TIn, TOut]) {
+			func(settings *observe.OperationSettings[TIn, TOut]) {
 				settings.WithActivityName(name)
 			},
 		},
