@@ -202,10 +202,10 @@ func newObservable[T any](producer func(ctx Context, streamWriter streams.Writer
 	obs := &Observable[T]{
 		mu:       new(sync.Mutex),
 		settings: settings,
-		ctx: Context{
-			Context:  utils.ValueOrFallback(settings.ctx, context.Background()),
-			Activity: utils.ValueOrFallback(settings.activity, ""),
-		},
+		ctx: NewContext(
+			utils.ValueOrFallback(settings.ctx, context.Background()),
+			utils.ValueOrFallback(settings.activity, ""),
+		),
 		publishStrategy:      utils.ValueOrFallback(settings.publishStrategy, Immediately),
 		errorStrategy:        utils.ValueOrFallback(settings.errorStrategy, StopOnError),
 		buffer:               utils.ValueOrFallback(settings.buffer, uint64(0)),
