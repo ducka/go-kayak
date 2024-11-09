@@ -64,7 +64,7 @@ func Test_ConcurrencySync_Checkpoint(t *testing.T) {
 		},
 	} {
 		t.Run(test.name, func(t *testing.T) {
-			sut := NewConcurrencySync(test.concurrencyLimit)
+			sut := NewCheckpointSync(test.concurrencyLimit)
 
 			wg := sync.WaitGroup{}
 			wg.Add(test.spawnCount)

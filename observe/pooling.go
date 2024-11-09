@@ -10,6 +10,10 @@ import (
 	"github.com/ducka/go-kayak/utils"
 )
 
+const (
+	slotCtxKey = "slot"
+)
+
 type PoolingStrategy[TIn, TOut any] interface {
 	Execute(ctx Context, operation OperationFunc[TIn, TOut], upstream streams.Reader[TIn], downstream streams.Writer[TOut])
 }
@@ -33,18 +37,19 @@ func (s *RoundRobinPoolingStrategy[TIn, TOut]) Execute(ctx Context, operation Op
 	// Initialise the pool of operations to currently process the upstream
 	pool := make(chan *streams.Stream[TIn], s.poolSize)
 	poolStreamsToClose := make([]*streams.Stream[TIn], s.poolSize)
-	for i := 0; i < s.poolSize; i++ {
-		poolStream := streams.NewStream[TIn]()
-		pool <- poolStream
-		poolStreamsToClose[i] = poolStream
+	for slot := 0; slot < s.poolSize; slot++ {
+		slotStream := streams.NewStream[TIn]()
+		pool <- slotStream
+		poolStreamsToClose[slot] = slotStream
 
 		opWg.Add(1)
-		go func(poolStream streams.Reader[TIn], downstream streams.Writer[TOut]) {
+		go func(slot int, slotStream streams.Reader[TIn], downstream streams.Writer[TOut]) {
 			defer opWg.Done()
 			now := time.Now()
-			operation(ctx, poolStream, downstream)
+			ctx = NewContextWithValue(ctx, slotCtxKey, slot)
+			operation(ctx, slotStream, downstream)
 			instrumentation.Metrics().Timing(ctx.Activity, "operation_duration", time.Since(now))
-		}(poolStream, downstream)
+		}(slot, slotStream, downstream)
 	}
 
 	// Send items to the next available stream in the pool
@@ -126,20 +131,21 @@ func NewPartitionedPoolingStrategy[TIn, TOut any](keySelector PartitionKeySelect
 
 func (p *PartitionedPoolingStrategy[TIn, TOut]) Execute(ctx Context, operation OperationFunc[TIn, TOut], upstream streams.Reader[TIn], downstream streams.Writer[TOut]) {
 	opWg := &sync.WaitGroup{}
-	pool := make([]*streams.Stream[TIn], p.poolSize)
+	pool := make([]*streams.Stream[TIn], int(p.poolSize))
 
 	// Initialise the pool of operations to currently process the upstream
-	for i := uint16(0); i < p.poolSize; i++ {
-		poolStream := streams.NewStream[TIn](p.bufferSize)
-		pool[i] = poolStream
+	for slot := 0; slot < int(p.poolSize); slot++ {
+		slotStream := streams.NewStream[TIn](p.bufferSize)
+		pool[slot] = slotStream
 		opWg.Add(1)
 
-		go func(poolStream streams.Reader[TIn], downstream streams.Writer[TOut]) {
+		go func(slot int, slotStream streams.Reader[TIn], downstream streams.Writer[TOut]) {
 			defer opWg.Done()
 			now := time.Now()
-			operation(ctx, poolStream, downstream)
+			ctx = NewContextWithValue(ctx, slotCtxKey, slot)
+			operation(ctx, slotStream, downstream)
 			instrumentation.Metrics().Timing(ctx.Activity, "operation_duration", time.Since(now))
-		}(poolStream, downstream)
+		}(slot, slotStream, downstream)
 	}
 
 	// Send items to the next available stream in the pool
