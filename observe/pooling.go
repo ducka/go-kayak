@@ -43,13 +43,13 @@ func (s *RoundRobinPoolingStrategy[TIn, TOut]) Execute(ctx Context, operation Op
 		poolStreamsToClose[slot] = slotStream
 
 		opWg.Add(1)
-		go func(slot int, slotStream streams.Reader[TIn], downstream streams.Writer[TOut]) {
+		go func(slot int, slotStream streams.Reader[TIn], downstream streams.Writer[TOut], ctx Context) {
 			defer opWg.Done()
 			now := time.Now()
 			ctx = NewContextWithValue(ctx, slotCtxKey, slot)
 			operation(ctx, slotStream, downstream)
 			instrumentation.Metrics().Timing(ctx.Activity, "operation_duration", time.Since(now))
-		}(slot, slotStream, downstream)
+		}(slot, slotStream, downstream, ctx)
 	}
 
 	// Send items to the next available stream in the pool
@@ -97,12 +97,12 @@ type PartitionedPoolingStrategy[TIn, TOut any] struct {
 	keySelector PartitionKeySelector[TIn]
 	hashFunc    HashFunc
 	poolSize    uint16
-	bufferSize  uint64
+	bufferSize  int
 }
 
 type ParitionedPoolSettings struct {
-	PoolSize   *uint16
-	BufferSize *uint64
+	PoolSize   *int
+	BufferSize *int
 	HashFunc   *HashFunc
 }
 
@@ -119,9 +119,17 @@ func NewPartitionedPoolingStrategy[TIn, TOut any](keySelector PartitionKeySelect
 			strategy.hashFunc = *settings[0].HashFunc
 		}
 		if settings[0].PoolSize != nil {
-			strategy.poolSize = *settings[0].PoolSize
+			if *settings[0].PoolSize <= 0 {
+				panic("Pool size must be greater than 0")
+			}
+
+			strategy.poolSize = uint16(*settings[0].PoolSize)
 		}
 		if settings[0].BufferSize != nil {
+			if *settings[0].BufferSize < 0-1 {
+				panic("BufferSize size must be greater than or equal to 0")
+			}
+
 			strategy.bufferSize = *settings[0].BufferSize
 		}
 	}
@@ -135,7 +143,7 @@ func (p *PartitionedPoolingStrategy[TIn, TOut]) Execute(ctx Context, operation O
 
 	// Initialise the pool of operations to currently process the upstream
 	for slot := 0; slot < int(p.poolSize); slot++ {
-		slotStream := streams.NewStream[TIn](p.bufferSize)
+		slotStream := streams.NewStream[TIn](uint64(p.bufferSize))
 		pool[slot] = slotStream
 		opWg.Add(1)
 
