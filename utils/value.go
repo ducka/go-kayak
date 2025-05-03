@@ -4,6 +4,13 @@ import (
 	"reflect"
 )
 
+func ValueOrFallback[T any](value *T, fallback T) T {
+	if value == nil {
+		return fallback
+	}
+	return *value
+}
+
 func Coalesce(values ...interface{}) interface{} {
 	for _, v := range values {
 		if v != nil {

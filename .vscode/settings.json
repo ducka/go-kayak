@@ -1,0 +1,11 @@
+{
+    "go.testFlags": [
+        "-v"
+    ],
+    "go.testOnSave": false,
+    "go.coverOnSave": false,
+    "go.testExplorer": {
+        "showTestCodeLens": true,
+        "showTestCoverage": true
+    }
+}

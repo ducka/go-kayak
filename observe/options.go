@@ -2,83 +2,79 @@ package observe
 
 import (
 	"context"
-	"runtime"
 )
 
-type observableOptions struct {
-	ctx                  context.Context
-	activity             string
-	backpressureStrategy BackpressureStrategy
-	errorStrategy        ErrorStrategy
-	poolSize             int
-	buffer               uint64
-	publishStrategy      PublishStrategy
+type ObservableOption func(settings *ObservableSettings)
+
+type ObservableSettings struct {
+	ctx                  *context.Context
+	activity             *string
+	backpressureStrategy *BackpressureStrategy
+	errorStrategy        *ErrorStrategy
+	buffer               *uint64
+	publishStrategy      *PublishStrategy
 }
 
-func newOptions() observableOptions {
-	return observableOptions{
-		ctx:                  context.Background(),
-		backpressureStrategy: Block,
-		errorStrategy:        StopOnError,
-		buffer:               0,
-		publishStrategy:      Immediately,
+func NewObservableSettings() *ObservableSettings {
+	return &ObservableSettings{}
+}
+
+func (b *ObservableSettings) apply(options ...ObservableOption) {
+	for _, opt := range options {
+		opt(b)
 	}
 }
 
-type ObservableOption func(options *observableOptions)
-
-// WithPublishStrategy instructs the observable when to start observing items
-func WithPublishStrategy(strategy PublishStrategy) ObservableOption {
-	return func(options *observableOptions) {
-		options.publishStrategy = strategy
+// copyTo copies settings to the supplied ObservableSettings object
+func (b *ObservableSettings) copyTo(dest *ObservableSettings) {
+	if b.ctx != nil {
+		dest.ctx = b.ctx
+	}
+	if b.activity != nil {
+		dest.activity = b.activity
+	}
+	if b.backpressureStrategy != nil {
+		dest.backpressureStrategy = b.backpressureStrategy
+	}
+	if b.errorStrategy != nil {
+		dest.errorStrategy = b.errorStrategy
+	}
+	if b.buffer != nil {
+		dest.buffer = b.buffer
+	}
+	if b.publishStrategy != nil {
+		dest.publishStrategy = b.publishStrategy
 	}
 }
 
-func WithContext(ctx context.Context) ObservableOption {
-	return func(options *observableOptions) {
-		options.ctx = ctx
-	}
+func (b *ObservableSettings) WithContext(ctx context.Context) *ObservableSettings {
+	b.ctx = &ctx
+	return b
 }
 
-func WithErrorStrategy(strategy ErrorStrategy) ObservableOption {
-	return func(options *observableOptions) {
-		options.errorStrategy = strategy
-	}
+func (b *ObservableSettings) WithPublishStrategy(publishStrategy PublishStrategy) *ObservableSettings {
+	b.publishStrategy = &publishStrategy
+	return b
 }
 
-func WithBackpressureStrategy(strategy BackpressureStrategy) ObservableOption {
-	return func(options *observableOptions) {
-		options.backpressureStrategy = strategy
-	}
+func (b *ObservableSettings) WithErrorStrategy(errorStrategy ErrorStrategy) *ObservableSettings {
+	b.errorStrategy = &errorStrategy
+	return b
 }
 
-func WithActivityName(activityName string) ObservableOption {
-	return func(options *observableOptions) {
-		options.activity = activityName
-	}
+func (b *ObservableSettings) WithBackpressureStrategy(backpressureStrategy BackpressureStrategy) *ObservableSettings {
+	b.backpressureStrategy = &backpressureStrategy
+	return b
 }
 
-func WithBuffer(buffer uint64) func(options *observableOptions) {
-	return func(options *observableOptions) {
-		options.buffer = buffer
-	}
+func (b *ObservableSettings) WithActivityName(activity string) *ObservableSettings {
+	b.activity = &activity
+	return b
 }
 
-// WithCPUPool sets the number of goroutines to use for currently processing items to the number of CPU cores on the host machine
-func WithCPUPool() ObservableOption {
-	return WithPool(runtime.NumCPU())
-}
-
-// WithPool sets the number of goroutines to use for concurrently processing items
-func WithPool(poolSize int) ObservableOption {
-	return func(options *observableOptions) {
-		if poolSize < 1 {
-			options.poolSize = 1
-			return
-		}
-
-		options.poolSize = poolSize
-	}
+func (b *ObservableSettings) WithBuffer(bufferSize uint64) *ObservableSettings {
+	b.buffer = &bufferSize
+	return b
 }
 
 type subscribeOptions struct {

@@ -8,7 +8,7 @@ import (
 )
 
 // Throttle throttles the rate of Items emitted by the observable to the specified flow rate.
-func Throttle[T any](flowRate int64, perDuration time.Duration, opts ...observe.ObservableOption) observe.OperatorFunc[T, T] {
+func Throttle[T any](flowRate int64, perDuration time.Duration, opts ...observe.OperationOption[T, T]) observe.OperatorFunc[T, T] {
 	if flowRate < 1 {
 		flowRate = 1
 	}

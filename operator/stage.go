@@ -24,7 +24,7 @@ type itemWithKey[TItem any] struct {
 	Item TItem
 }
 
-func Stage[TIn, TOut any](keySelector KeySelectorFunc[TIn], stateMapper StateMapFunc[TIn, TOut], stateStore store.StateStore[TOut], opts ...observe.ObservableOption) observe.OperatorFunc[TIn, TOut] {
+func Stage[TIn, TOut any](keySelector KeySelectorFunc[TIn], stateMapper StateMapFunc[TIn, TOut], stateStore store.StateStore[TOut], opts ...observe.OperationOption[TIn, TOut]) observe.OperatorFunc[TIn, TOut] {
 	opts = defaultActivityName("Stage", opts)
 
 	return func(source *observe.Observable[TIn]) *observe.Observable[TOut] {
