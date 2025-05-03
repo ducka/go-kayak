@@ -9,7 +9,7 @@ import (
 	"github.com/stretchr/testify/assert"
 )
 
-func Test_ConcurrencySync_Checkpoint(t *testing.T) {
+func Test_ProcessSynchroniser_Checkpoint(t *testing.T) {
 
 	for _, test := range []struct {
 		name             string
